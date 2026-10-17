@@ -53,9 +53,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       {/* Top Mobile Bar */}
       <div className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-dark-900 border-b border-gray-200 dark:border-dark-700 sticky top-0 z-30">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-orens-600 text-white flex items-center justify-center font-black text-sm">
-            O
-          </div>
+          <img
+            src="/logo.png"
+            alt="Orens Solution"
+            className="w-8 h-8 object-contain rounded-lg shrink-0"
+          />
           <div>
             <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100">
               Orens Solution
@@ -108,9 +110,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-gray-200 dark:border-dark-700">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-orens-600 text-white flex items-center justify-center font-bold text-xs">
-                    O
-                  </div>
+                  <img
+                    src="/logo.png"
+                    alt="Orens Solution"
+                    className="w-7 h-7 object-contain rounded-lg shrink-0"
+                  />
                   <span className="font-bold text-sm text-gray-900 dark:text-gray-100">Menu Lainnya</span>
                 </div>
                 <button

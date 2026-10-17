@@ -27,9 +27,11 @@ export const LoginPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="w-14 h-14 bg-orens-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black mx-auto shadow-lg shadow-orens-600/30">
-          O
-        </div>
+        <img
+          src="/logo.png"
+          alt="Orens Solution"
+          className="w-16 h-16 object-contain mx-auto drop-shadow-md"
+        />
         <h2 className="mt-4 text-2xl font-extrabold text-gray-900 dark:text-gray-100 tracking-tight">
           Orens Solution
         </h2>

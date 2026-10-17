@@ -47,9 +47,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand Header */}
       <div className="p-5 border-b border-gray-200 dark:border-dark-700 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orens-600 text-white flex items-center justify-center font-black text-xl shadow-sm shadow-orens-600/30">
-            O
-          </div>
+          <img
+            src="/logo.png"
+            alt="Orens Solution"
+            className="w-10 h-10 object-contain rounded-lg shrink-0"
+          />
           <div>
             <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
               Orens Solution
