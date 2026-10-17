@@ -271,12 +271,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
               {greeting}, {profile?.full_name}!
             </h1>
-
-            <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl">
-              {isMemberOnly
-                ? `Divisi kamu: ${(profile?.divisions || []).map((d: any) => d.division?.name || 'Game Development').join(', ') || 'Game Development'}. Pantau jadwal dan grafik kehadiran di bawah.`
-                : `Masuk sebagai ${role || 'Pengurus'}. Pantau operasional 5 divisi peminatan dan grafik presensi harian.`}
-            </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
