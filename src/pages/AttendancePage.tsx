@@ -17,6 +17,8 @@ import {
   X,
   History,
   ShieldAlert,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { LoadingSpinner, EmptyState, ErrorState, AuditPromptModal } from '../components/UIState';
 import { AttendanceSession, AttendanceRecord, Division } from '../types';
@@ -34,6 +36,10 @@ export const AttendancePage: React.FC = () => {
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number>(0);
   const [secondsLeft, setSecondsLeft] = useState<number>(300);
   const [attendees, setAttendees] = useState<AttendanceRecord[]>([]);
+
+  // Large QR Pop-up Modal State
+  const [showQrModal, setShowQrModal] = useState(false);
+  const modalCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Create session modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -150,14 +156,26 @@ export const AttendancePage: React.FC = () => {
       setSecondsLeft(Math.max(0, Math.floor((expiry - Date.now()) / 1000)));
 
       // Render QR to canvas
+      const qrPayload = JSON.stringify({
+        sessionId,
+        token: tokenData.token,
+        t: Date.now(),
+      });
+
       if (canvasRef.current) {
-        const qrPayload = JSON.stringify({
-          sessionId,
-          token: tokenData.token,
-          t: Date.now(),
-        });
         QRCode.toCanvas(canvasRef.current, qrPayload, {
           width: 256,
+          margin: 2,
+          color: {
+            dark: '#111827',
+            light: '#ffffff',
+          },
+        });
+      }
+
+      if (modalCanvasRef.current) {
+        QRCode.toCanvas(modalCanvasRef.current, qrPayload, {
+          width: 380,
           margin: 2,
           color: {
             dark: '#111827',
@@ -200,23 +218,37 @@ export const AttendancePage: React.FC = () => {
     };
   }, [activeSession?.id, activeSession?.status]);
 
-  // Re-draw QR canvas whenever qrToken changes
+  // Re-draw QR canvas whenever qrToken changes or modal opens
   useEffect(() => {
-    if (activeSession && qrToken && canvasRef.current) {
+    if (activeSession && qrToken) {
       const qrPayload = JSON.stringify({
         sessionId: activeSession.id,
         token: qrToken,
       });
-      QRCode.toCanvas(canvasRef.current, qrPayload, {
-        width: 256,
-        margin: 2,
-        color: {
-          dark: '#111827',
-          light: '#ffffff',
-        },
-      });
+
+      if (canvasRef.current) {
+        QRCode.toCanvas(canvasRef.current, qrPayload, {
+          width: 256,
+          margin: 2,
+          color: {
+            dark: '#111827',
+            light: '#ffffff',
+          },
+        });
+      }
+
+      if (modalCanvasRef.current) {
+        QRCode.toCanvas(modalCanvasRef.current, qrPayload, {
+          width: 380,
+          margin: 2,
+          color: {
+            dark: '#111827',
+            light: '#ffffff',
+          },
+        });
+      }
     }
-  }, [qrToken]);
+  }, [qrToken, showQrModal, activeSession]);
 
   // Create Session
   const handleCreateSession = async (e: React.FormEvent) => {
@@ -233,7 +265,7 @@ export const AttendancePage: React.FC = () => {
         .insert({
           title: newTitle.trim(),
           division_id: newDivisionId || null,
-          activity_type: newActivityType,
+          session_type: newActivityType,
           date: newDate,
           start_time: newStartTime,
           end_time: newEndTime,
@@ -272,6 +304,7 @@ export const AttendancePage: React.FC = () => {
       if (updErr) throw updErr;
 
       setActiveSession({ ...sess, status: 'open' });
+      setShowQrModal(true);
       fetchSessions();
     } catch (err: any) {
       alert('Gagal membuka sesi: ' + err.message);
@@ -546,6 +579,16 @@ export const AttendancePage: React.FC = () => {
               <div className="mt-3 px-3 py-1.5 rounded-lg bg-orens-100 dark:bg-orens-950/60 text-xs text-orens-900 dark:text-orens-200 font-semibold">
                 Kode Cadangan: <strong className="font-mono text-sm tracking-wider text-orens-700 dark:text-orens-400">{activeSession.backup_code}</strong>
               </div>
+
+              {/* Maximize to Modal Button */}
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 transition-colors shadow-sm shadow-orens-600/20"
+              >
+                <Maximize2 className="w-4 h-4" />
+                <span>Perbesar QR (Pop-up Proyektor)</span>
+              </button>
             </div>
 
             {/* Right: Session Info & Live Attendees List */}
@@ -567,6 +610,15 @@ export const AttendancePage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowQrModal(true)}
+                    title="Buka QR dalam Modal Pop-up Layar Penuh"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 hover:bg-orens-100 dark:hover:bg-orens-900/60 rounded-xl border border-orens-200 dark:border-orens-800/40 transition-colors shadow-sm"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>Mode Pop-up QR</span>
+                  </button>
+
                   <button
                     onClick={() => refreshQrToken(activeSession.id)}
                     title="Segarkan Token QR Server Sekarang"
@@ -723,7 +775,7 @@ export const AttendancePage: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {sess.status === 'scheduled' && (
+                        {(sess.status === 'scheduled' || sess.status === 'draft') && (
                           <button
                             onClick={() => handleOpenSession(sess)}
                             className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm"
@@ -733,13 +785,26 @@ export const AttendancePage: React.FC = () => {
                           </button>
                         )}
                         {sess.status === 'open' && (
-                          <button
-                            onClick={() => handleCloseSession(sess)}
-                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm"
-                          >
-                            <Square className="w-3 h-3" />
-                            <span>Tutup</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setActiveSession(sess);
+                                setShowQrModal(true);
+                              }}
+                              title="Perbesar QR untuk Proyektor"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 border border-orens-200 dark:border-orens-800 rounded-lg shadow-sm hover:bg-orens-100"
+                            >
+                              <Maximize2 className="w-3 h-3" />
+                              <span>Pop-up QR</span>
+                            </button>
+                            <button
+                              onClick={() => handleCloseSession(sess)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm"
+                            >
+                              <Square className="w-3 h-3" />
+                              <span>Tutup</span>
+                            </button>
+                          </div>
                         )}
                         {sess.status === 'closed' && (
                           <span className="text-xs text-gray-400 italic">Selesai</span>
@@ -890,6 +955,94 @@ export const AttendancePage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP MODAL QR CODE: ULTRA-LARGE & HIGH-CONTRAST FOR PROJECTOR */}
+      {showQrModal && activeSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-md animate-in fade-in">
+          <div className="bg-dark-900 border-2 border-orens-500/60 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center relative text-white space-y-5">
+            {/* Top Close Button */}
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Header info */}
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>Mode Proyektor • Sesi Dibuka</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                {activeSession.title}
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-400 mt-1">
+                Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kategori: {activeSession.activity_type}
+              </p>
+            </div>
+
+            {/* QR Canvas Display */}
+            <div className="relative p-3 bg-white rounded-2xl shadow-2xl shadow-orens-500/20">
+              <canvas ref={modalCanvasRef} className="rounded-xl w-[260px] h-[260px] sm:w-[360px] sm:h-[360px]" />
+            </div>
+
+            {/* Live Countdown Progress Bar */}
+            <div className="w-full max-w-md space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-gray-300">
+                <span className="flex items-center gap-1.5 text-orens-400">
+                  <Clock className="w-4 h-4 animate-spin" />
+                  <span>Pembaruan Token Otomatis:</span>
+                </span>
+                <span className="font-mono text-base text-white font-extrabold">
+                  {formatSeconds(secondsLeft)}
+                </span>
+              </div>
+              <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-orens-500 h-2.5 transition-all duration-1000 rounded-full"
+                  style={{ width: `${(secondsLeft / 300) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Large Backup Code Display */}
+            <div className="w-full max-w-md p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+              <div className="text-left">
+                <span className="text-[11px] uppercase tracking-wider font-semibold text-gray-400">
+                  Kode Cadangan Manual:
+                </span>
+                <p className="text-xs text-gray-400">Gunakan bila kamera HP terkendala</p>
+              </div>
+              <span className="font-mono text-2xl font-black tracking-widest text-amber-400 bg-black/40 px-3 py-1 rounded-xl border border-amber-400/30">
+                {activeSession.backup_code}
+              </span>
+            </div>
+
+            {/* Live attendee counters & action buttons */}
+            <div className="w-full max-w-md flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+              <div className="text-gray-400">
+                Peserta Hadir: <strong className="text-emerald-400">{attendees.length} Siswa</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => refreshQrToken(activeSession.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 transition-colors font-medium"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Segarkan</span>
+                </button>
+                <button
+                  onClick={() => setShowQrModal(false)}
+                  className="px-4 py-1.5 rounded-xl bg-orens-600 hover:bg-orens-700 text-white font-bold transition-colors shadow-sm"
+                >
+                  Tutup Pop-up
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

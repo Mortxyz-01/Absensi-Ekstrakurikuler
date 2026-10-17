@@ -46,7 +46,7 @@ export interface MemberDivision {
 }
 
 export type ActivityType = 'Wajib' | 'Opsional';
-export type SessionStatus = 'scheduled' | 'open' | 'closed';
+export type SessionStatus = 'scheduled' | 'open' | 'closed' | 'draft' | 'cancelled';
 
 export interface AttendanceSession {
   id: string;

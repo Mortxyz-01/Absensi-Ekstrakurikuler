@@ -125,11 +125,10 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
             <button
               key={d.id}
               onClick={() => setSelectedDivId(d.id)}
-              className={`text-left p-4 rounded-2xl border transition-all shadow-sm ${
-                isSelected
+              className={`text-left p-4 rounded-2xl border transition-all shadow-sm ${isSelected
                   ? 'border-orens-600 bg-orens-50/50 dark:bg-orens-950/20 ring-2 ring-orens-500/20'
                   : 'border-gray-200 dark:border-dark-700 bg-white dark:bg-dark-800 hover:border-gray-300 dark:hover:border-dark-600'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-orens-600 dark:text-orens-400 font-mono">
@@ -251,11 +250,10 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
 
                     <div className="flex flex-col items-end gap-1">
                       <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          m.classification === 'Wajib'
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${m.classification === 'Wajib'
                             ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
                             : 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                        }`}
+                          }`}
                       >
                         {m.classification}
                       </span>

@@ -49,7 +49,7 @@ export const ReportsPage: React.FC = () => {
           id, status, scan_time, verification_method,
           member:users (full_name, email),
           session:attendance_sessions (
-            title, date, activity_type, division_id,
+            title, date, session_type, division_id,
             division:divisions (name)
           )
         `)
@@ -66,7 +66,7 @@ export const ReportsPage: React.FC = () => {
         return {
           session_title: rawSess?.title || 'Sesi Presensi',
           division_name: rawDiv?.name || 'Semua Divisi',
-          activity_type: rawSess?.activity_type || 'Wajib',
+          activity_type: rawSess?.session_type || rawSess?.activity_type || 'Wajib',
           date: rawSess?.date || '-',
           student_name: rawMem?.full_name || 'Anggota',
           student_email: rawMem?.email || '',

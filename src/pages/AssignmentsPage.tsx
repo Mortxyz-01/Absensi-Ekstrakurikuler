@@ -195,7 +195,32 @@ export const AssignmentsPage: React.FC = () => {
     setGradingAssignment(a);
     setGradingSubId(null);
     try {
-      const { data } = await supabase
+      // 1. Fetch all active members in this division
+      const { data: memDivData } = await supabase
+        .from('member_divisions')
+        .select('member_id')
+        .eq('division_id', a.division_id)
+        .eq('is_active', true);
+
+      const memberIds = (memDivData || []).map((m: any) => m.member_id);
+
+      // 2. Fetch users info for these members
+      const { data: usersData } = await supabase
+        .from('users')
+        .select('id, full_name, email, role:roles(name)')
+        .in('id', memberIds.length > 0 ? memberIds : ['00000000-0000-0000-0000-000000000000']);
+
+      const userMap = new Map<string, any>();
+      (usersData || []).forEach((u: any) => {
+        const rawRole = Array.isArray(u.role) ? u.role[0] : u.role;
+        // Only include Members or students
+        if (rawRole?.name === 'Member') {
+          userMap.set(u.id, u);
+        }
+      });
+
+      // 3. Fetch submissions for this assignment
+      const { data: subsData } = await supabase
         .from('assignment_submissions')
         .select(`
           id, assignment_id, member_id, submission_text, submitted_at,
@@ -204,21 +229,66 @@ export const AssignmentsPage: React.FC = () => {
         `)
         .eq('assignment_id', a.id);
 
-      setSubmissionsList(data || []);
+      const existingSubsMap = new Map<string, any>();
+      (subsData || []).forEach((s: any) => {
+        existingSubsMap.set(s.member_id, s);
+      });
+
+      // 4. Combine into complete student grading list
+      const combinedList: any[] = [];
+      userMap.forEach((u, memberId) => {
+        const existing = existingSubsMap.get(memberId);
+        if (existing) {
+          combinedList.push(existing);
+        } else {
+          combinedList.push({
+            id: 'temp_' + memberId,
+            assignment_id: a.id,
+            member_id: memberId,
+            submission_text: 'Belum mengirimkan jawaban (dapat dinilai langsung oleh mentor)',
+            submitted_at: new Date().toISOString(),
+            member: { full_name: u.full_name, email: u.email },
+            grade: null,
+          });
+        }
+      });
+
+      setSubmissionsList(combinedList);
     } catch (err) {
       console.error('Error fetching submissions for grading:', err);
     }
   };
 
   // Save Grade
-  const handleSaveGrade = async (submissionId: string) => {
-    if (!profile) return;
+  const handleSaveGrade = async (submissionId: string, memberId?: string) => {
+    if (!profile || !gradingAssignment) return;
     setGradeSaving(true);
     try {
+      let targetSubId = submissionId;
+
+      // If virtual submission, create assignment_submissions row first
+      if (submissionId.startsWith('temp_')) {
+        const actualMemberId = memberId || submissionId.replace('temp_', '');
+        const { data: newSub, error: subErr } = await supabase
+          .from('assignment_submissions')
+          .insert({
+            assignment_id: gradingAssignment.id,
+            member_id: actualMemberId,
+            submission_text: 'Dinilai langsung oleh Ketua/Mentor',
+            status: 'submitted',
+            submitted_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+
+        if (subErr) throw subErr;
+        targetSubId = newSub.id;
+      }
+
       const scoreNum = Number(gradeScore);
       const { error: grErr } = await supabase.from('assignment_grades').upsert(
         {
-          submission_id: submissionId,
+          submission_id: targetSubId,
           grader_id: profile.id,
           raw_score: scoreNum,
           normalized_score: scoreNum,
@@ -232,9 +302,7 @@ export const AssignmentsPage: React.FC = () => {
       if (grErr) throw grErr;
 
       // Re-fetch submissions
-      if (gradingAssignment) {
-        openGradingModal(gradingAssignment);
-      }
+      openGradingModal(gradingAssignment);
       setGradingSubId(null);
       setGradeFeedback('');
     } catch (err: any) {
@@ -525,7 +593,7 @@ export const AssignmentsPage: React.FC = () => {
                             </button>
                             <button
                               disabled={gradeSaving}
-                              onClick={() => handleSaveGrade(sub.id)}
+                              onClick={() => handleSaveGrade(sub.id, sub.member_id)}
                               className="px-3 py-1 text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 rounded shadow-sm"
                             >
                               {gradeSaving ? 'Menyimpan...' : 'Simpan Nilai'}
