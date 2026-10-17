@@ -19,6 +19,9 @@ import {
   ShieldAlert,
   Maximize2,
   Minimize2,
+  UserPlus,
+  CameraOff,
+  Search,
 } from 'lucide-react';
 import { LoadingSpinner, EmptyState, ErrorState, AuditPromptModal } from '../components/UIState';
 import { AttendanceSession, AttendanceRecord, Division } from '../types';
@@ -51,6 +54,26 @@ export const AttendancePage: React.FC = () => {
   const [newEndTime, setNewEndTime] = useState('17:00');
   const [newLateThreshold, setNewLateThreshold] = useState(15);
   const [createSaving, setCreateSaving] = useState(false);
+
+  // Manual Attendance Modal State (for students with camera or device issues)
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [targetSessionForManual, setTargetSessionForManual] = useState<AttendanceSession | null>(null);
+  const [manualStudentList, setManualStudentList] = useState<{
+    id: string;
+    full_name: string;
+    email: string;
+    nim?: string;
+    alreadyAttended: boolean;
+    currentStatus?: string;
+  }[]>([]);
+  const [manualLoadingStudents, setManualLoadingStudents] = useState(false);
+  const [selectedManualMemberId, setSelectedManualMemberId] = useState('');
+  const [manualStatus, setManualStatus] = useState<'Hadir' | 'Terlambat' | 'Izin' | 'Sakit'>('Hadir');
+  const [manualNote, setManualNote] = useState('Kamera HP bermasalah / tidak bisa scan');
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualError, setManualError] = useState('');
+  const [manualSuccess, setManualSuccess] = useState('');
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
 
   // Member Scan / Input state
   const [scanInputCode, setScanInputCode] = useState('');
@@ -351,6 +374,194 @@ export const AttendancePage: React.FC = () => {
     }
   };
 
+  // Open manual attendance modal for an active or scheduled session
+  const openManualAttendanceModal = async (session: AttendanceSession) => {
+    setTargetSessionForManual(session);
+    setShowManualModal(true);
+    setManualLoadingStudents(true);
+    setManualError('');
+    setManualSuccess('');
+    setManualSearchQuery('');
+    setManualStatus('Hadir');
+    setManualNote('Kamera HP bermasalah / tidak bisa scan');
+
+    try {
+      // 1. Fetch existing attendance records for this session
+      const { data: currentRecs } = await supabase
+        .from('attendance_records')
+        .select('member_id, status')
+        .eq('session_id', session.id);
+
+      const attendedMap = new Map<string, string>();
+      (currentRecs || []).forEach((r: any) => attendedMap.set(r.member_id, r.status));
+
+      // 2. Fetch member IDs if session is division-specific
+      let memberIds: string[] | null = null;
+      if (session.division_id) {
+        const { data: mdData, error: mdErr } = await supabase
+          .from('member_divisions')
+          .select('member_id')
+          .eq('division_id', session.division_id)
+          .eq('is_active', true);
+
+        if (mdErr) throw mdErr;
+        memberIds = (mdData || []).map((m: any) => m.member_id);
+      }
+
+      // 3. Fetch users and their member record
+      let query = supabase
+        .from('users')
+        .select(`
+          id, full_name, email,
+          member_record:members (nim, status)
+        `)
+        .eq('is_active', true);
+
+      if (memberIds !== null) {
+        if (memberIds.length === 0) {
+          setManualStudentList([]);
+          setSelectedManualMemberId('');
+          setManualLoadingStudents(false);
+          return;
+        }
+        query = query.in('id', memberIds);
+      }
+
+      const { data: usersData, error: uErr } = await query.order('full_name');
+      if (uErr) throw uErr;
+
+      const formatted = (usersData || []).map((u: any) => {
+        const mem = Array.isArray(u.member_record) ? u.member_record[0] : u.member_record;
+        const attended = attendedMap.has(u.id);
+        return {
+          id: u.id,
+          full_name: u.full_name || 'Tanpa Nama',
+          email: u.email || '',
+          nim: mem?.nim || '',
+          alreadyAttended: attended,
+          currentStatus: attendedMap.get(u.id),
+        };
+      });
+
+      setManualStudentList(formatted);
+      const firstCandidate = formatted.find((s) => !s.alreadyAttended) || formatted[0];
+      if (firstCandidate) {
+        setSelectedManualMemberId(firstCandidate.id);
+      } else {
+        setSelectedManualMemberId('');
+      }
+    } catch (err: any) {
+      console.error('Error fetching students for manual attendance:', err);
+      setManualError(err.message || 'Gagal memuat daftar siswa.');
+    } finally {
+      setManualLoadingStudents(false);
+    }
+  };
+
+  // Save manual attendance (insert or update)
+  const handleSaveManualAttendance = async (continueNext = false) => {
+    if (!targetSessionForManual || !selectedManualMemberId) {
+      setManualError('Pilih siswa terlebih dahulu.');
+      return;
+    }
+
+    setManualSaving(true);
+    setManualError('');
+    setManualSuccess('');
+
+    try {
+      const selectedStudent = manualStudentList.find((s) => s.id === selectedManualMemberId);
+      const existing = attendees.find((a) => a.member_id === selectedManualMemberId);
+
+      let recordId: string | null = null;
+      const noteText = manualNote.trim() || 'Input manual (kendala kamera)';
+
+      if (existing) {
+        const { error: updErr } = await supabase
+          .from('attendance_records')
+          .update({
+            status: manualStatus,
+            verification_method: 'manual_correction',
+            notes: noteText,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+
+        if (updErr) throw updErr;
+        recordId = existing.id;
+      } else {
+        const { data: insData, error: insErr } = await supabase
+          .from('attendance_records')
+          .insert({
+            session_id: targetSessionForManual.id,
+            member_id: selectedManualMemberId,
+            status: manualStatus,
+            scan_time: new Date().toISOString(),
+            verification_method: 'manual_correction',
+            notes: noteText,
+            created_by: profile?.id,
+          })
+          .select('id')
+          .single();
+
+        if (insErr) throw insErr;
+        recordId = insData?.id || null;
+      }
+
+      if (recordId) {
+        await logAudit(
+          'MANUAL_ATTENDANCE',
+          'attendance_records',
+          recordId,
+          noteText,
+          existing ? { status: existing.status } : null,
+          {
+            session_id: targetSessionForManual.id,
+            member_id: selectedManualMemberId,
+            status: manualStatus,
+            student_name: selectedStudent?.full_name,
+            reason: noteText,
+          }
+        );
+      }
+
+      if (activeSession && activeSession.id === targetSessionForManual.id) {
+        await fetchAttendees(activeSession.id);
+      }
+      await fetchSessions();
+
+      const studentName = selectedStudent?.full_name || 'Siswa';
+      setManualSuccess(`Berhasil mencatat presensi untuk ${studentName} (${manualStatus}).`);
+
+      setManualStudentList((prev) =>
+        prev.map((s) =>
+          s.id === selectedManualMemberId
+            ? { ...s, alreadyAttended: true, currentStatus: manualStatus }
+            : s
+        )
+      );
+
+      if (continueNext) {
+        const nextCandidate = manualStudentList.find(
+          (s) => s.id !== selectedManualMemberId && !s.alreadyAttended
+        );
+        if (nextCandidate) {
+          setSelectedManualMemberId(nextCandidate.id);
+        }
+      } else {
+        setTimeout(() => {
+          setShowManualModal(false);
+          setManualSuccess('');
+        }, 1100);
+      }
+    } catch (err: any) {
+      console.error('Error saving manual attendance:', err);
+      setManualError(err.message || 'Gagal menyimpan presensi manual.');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   // Member Scan / Manual Code Attendance
   const handleMemberSubmitAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -514,15 +725,21 @@ export const AttendancePage: React.FC = () => {
                   <input
                     type="text"
                     value={scanInputCode}
-                    onChange={(e) => setScanInputCode(e.target.value)}
+                    onChange={(e) => setScanInputCode(e.target.value.toUpperCase())}
                     placeholder="Contoh: AB12CD atau tempel token QR"
-                    className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500 font-mono"
+                    className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500 font-mono font-bold tracking-wider"
                     required
                   />
                 </div>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                  Kamera tidak tersedia? Minta kode cadangan 6 huruf kepada panitia pembina.
-                </p>
+                <div className="mt-2.5 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                  <CameraOff className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold">Kamera HP Bermasalah atau Tidak Bisa Scan?</p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                      Ketik <strong>6 karakter Kode Cadangan</strong> dari layar proyektor / mentor ke kolom di atas. Bila HP mati total, minta pembina divisi untuk mencatat kehadiran lewat <strong>Input Presensi Manual</strong>.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -695,13 +912,23 @@ export const AttendancePage: React.FC = () => {
 
               {/* Attendee Live Table */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                  Daftar Peserta Hadir (Pembaruan Otomatis):
-                </h4>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Daftar Peserta Hadir (Pembaruan Otomatis):
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => openManualAttendanceModal(activeSession)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 rounded-xl shadow-sm transition-colors self-start sm:self-auto"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Input Presensi Manual Siswa</span>
+                  </button>
+                </div>
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                   {attendees.length === 0 ? (
                     <p className="text-xs text-gray-400 italic py-4 text-center">
-                      Belum ada siswa yang memindai QR sesi ini.
+                      Belum ada siswa yang memindai QR atau dicatat manual pada sesi ini.
                     </p>
                   ) : (
                     attendees.map((att) => (
@@ -709,11 +936,26 @@ export const AttendancePage: React.FC = () => {
                         key={att.id}
                         className="px-3 py-2 bg-gray-50 dark:bg-dark-900/60 rounded-lg flex items-center justify-between text-xs"
                       >
-                        <div>
-                          <span className="font-semibold text-gray-900 dark:text-gray-100">
-                            {att.member_name}
-                          </span>
-                          <span className="text-[10px] text-gray-400 ml-2">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">
+                              {att.member_name}
+                            </span>
+                            {att.verification_method === 'manual_correction' && (
+                              <span
+                                title={att.notes || 'Input manual pembina'}
+                                className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60"
+                              >
+                                Manual: {att.notes || 'Kamera HP'}
+                              </span>
+                            )}
+                            {att.verification_method === 'backup_code' && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-300 dark:border-blue-700/60">
+                                Kode Cadangan
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-gray-400">
                             {att.scan_time ? new Date(att.scan_time).toLocaleTimeString('id-ID') : '-'}
                           </span>
                         </div>
@@ -820,6 +1062,14 @@ export const AttendancePage: React.FC = () => {
                         )}
                         {sess.status === 'open' && (
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => openManualAttendanceModal(sess)}
+                              title="Input presensi manual untuk siswa berkendala kamera"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors"
+                            >
+                              <UserPlus className="w-3 h-3 text-orens-600 dark:text-orens-400" />
+                              <span>Manual</span>
+                            </button>
                             <button
                               onClick={() => {
                                 setActiveSession(sess);
@@ -1057,11 +1307,21 @@ export const AttendancePage: React.FC = () => {
             </div>
 
             {/* Live attendee counters & action buttons */}
-            <div className="w-full max-w-md flex items-center justify-between pt-2 border-t border-white/10 text-xs">
-              <div className="text-gray-400">
+            <div className="w-full max-w-md flex flex-col sm:flex-row items-center justify-between pt-2 border-t border-white/10 text-xs gap-3">
+              <div className="text-gray-400 text-center sm:text-left">
                 Peserta Hadir: <strong className="text-emerald-400">{attendees.length} Siswa</strong>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowQrModal(false);
+                    openManualAttendanceModal(activeSession);
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-orens-500/20 hover:bg-orens-500/30 text-orens-300 border border-orens-500/40 transition-colors font-medium"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Input Manual</span>
+                </button>
                 <button
                   onClick={() => refreshQrToken(activeSession.id)}
                   className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 transition-colors font-medium"
@@ -1080,6 +1340,223 @@ export const AttendancePage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL INPUT PRESENSI MANUAL SISWA (KENDALA KAMERA / PERANGKAT) */}
+      {showManualModal && targetSessionForManual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 max-w-lg w-full p-6 shadow-2xl relative text-gray-900 dark:text-gray-100 space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-gray-100 dark:border-dark-700 pb-3">
+              <div>
+                <h3 className="text-base font-bold flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                  <UserPlus className="w-5 h-5 text-orens-600 dark:text-orens-400" />
+                  <span>Input Presensi Manual Siswa</span>
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Solusi resmi bila kamera HP siswa rusak, izin ditolak, atau kendala perangkat.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowManualModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Session Summary Card */}
+            <div className="p-3 bg-gray-50 dark:bg-dark-900/60 rounded-xl border border-gray-200 dark:border-dark-700 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-900 dark:text-gray-100">
+                  {targetSessionForManual.title}
+                </span>
+                <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  Sesi {targetSessionForManual.status === 'open' ? 'Buka' : 'Terpilih'}
+                </span>
+              </div>
+              <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                Divisi: <strong>{targetSessionForManual.division?.name || 'Semua Divisi'}</strong> • Kategori: <strong>{targetSessionForManual.activity_type}</strong>
+              </div>
+            </div>
+
+            {/* Feedback Alerts */}
+            {manualError && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{manualError}</span>
+              </div>
+            )}
+            {manualSuccess && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{manualSuccess}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <div className="space-y-4 text-xs">
+              {/* Student Picker */}
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  Pilih Siswa / Anggota
+                </label>
+
+                {manualLoadingStudents ? (
+                  <div className="py-4 text-center text-xs text-gray-400">
+                    Memuat daftar siswa divisi...
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Search filter for students */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={manualSearchQuery}
+                        onChange={(e) => setManualSearchQuery(e.target.value)}
+                        placeholder="Cari nama atau NIM siswa..."
+                        className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
+                      />
+                    </div>
+
+                    <select
+                      value={selectedManualMemberId}
+                      onChange={(e) => setSelectedManualMemberId(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
+                    >
+                      <option value="">-- Pilih Siswa --</option>
+                      {manualStudentList
+                        .filter((s) => {
+                          const q = manualSearchQuery.toLowerCase();
+                          return (
+                            !q ||
+                            s.full_name.toLowerCase().includes(q) ||
+                            (s.nim && s.nim.toLowerCase().includes(q)) ||
+                            s.email.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.full_name} {s.nim ? `(${s.nim})` : ''} - {s.alreadyAttended ? `[Sudah: ${s.currentStatus || 'Hadir'}]` : '[Belum Presensi]'}
+                          </option>
+                        ))}
+                    </select>
+
+                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                      <span>Total Siswa Divisi: <strong>{manualStudentList.length}</strong></span>
+                      <span>Belum Hadir: <strong className="text-amber-600 dark:text-amber-400">{manualStudentList.filter(s => !s.alreadyAttended).length}</strong></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Attendance Status Picker */}
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Status Kehadiran
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['Hadir', 'Terlambat', 'Izin', 'Sakit'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setManualStatus(st)}
+                      className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all text-center ${
+                        manualStatus === st
+                          ? st === 'Hadir'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : st === 'Terlambat'
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                            : st === 'Izin'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                          : 'bg-gray-50 dark:bg-dark-900 border-gray-200 dark:border-dark-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Preset Reasons */}
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                  Alasan Cepat (Kendala Kamera / Perangkat)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Kamera HP bermasalah / blank',
+                    'Izin kamera browser ditolak',
+                    'Baterai HP siswa habis',
+                    'Kendala jaringan / kuota',
+                    'Hadir fisik di lokasi (konfirmasi pembina)',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setManualNote(preset)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+                        manualNote === preset
+                          ? 'bg-orens-100 dark:bg-orens-950/60 text-orens-800 dark:text-orens-300 border-orens-400 dark:border-orens-700 font-bold'
+                          : 'bg-gray-100 dark:bg-dark-700/60 text-gray-600 dark:text-gray-300 border-transparent hover:bg-gray-200 dark:hover:bg-dark-700'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Detailed Reason / Notes Input */}
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1">
+                  Catatan / Keterangan Pembina
+                </label>
+                <input
+                  type="text"
+                  value={manualNote}
+                  onChange={(e) => setManualNote(e.target.value)}
+                  placeholder="Tuliskan keterangan detail kendala siswa..."
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Keterangan ini dicatat ke log audit dengan metode verifikasi <code>manual_correction</code>.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t border-gray-100 dark:border-dark-700 flex flex-wrap items-center justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowManualModal(false)}
+                className="px-3.5 py-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700 font-medium transition-colors"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                disabled={manualSaving || !selectedManualMemberId}
+                onClick={() => handleSaveManualAttendance(true)}
+                className="px-3.5 py-2 rounded-xl bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 dark:hover:bg-dark-600 text-gray-800 dark:text-gray-200 font-bold disabled:opacity-50 transition-colors"
+              >
+                {manualSaving ? 'Menyimpan...' : 'Simpan & Siswa Lain'}
+              </button>
+              <button
+                type="button"
+                disabled={manualSaving || !selectedManualMemberId}
+                onClick={() => handleSaveManualAttendance(false)}
+                className="px-4 py-2 rounded-xl bg-orens-600 hover:bg-orens-700 text-white font-bold disabled:opacity-50 transition-colors shadow-sm"
+              >
+                {manualSaving ? 'Menyimpan...' : 'Simpan Presensi Manual'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+
