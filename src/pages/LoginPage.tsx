@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { KeyRound, Mail, AlertCircle, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
+import { KeyRound, Mail, AlertCircle, Loader2, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -8,16 +8,6 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const demoAccounts = [
-    { role: 'Pembina', email: 'pembina@orens.org', desc: 'Hak akses penuh setara Ketua' },
-    { role: 'Ketua', email: 'ketua@orens.org', desc: 'Hak akses penuh setara Pembina' },
-    { role: 'Wakil Ketua', email: 'wakil@orens.org', desc: 'Absensi, anggota, materi' },
-    { role: 'Sekretaris', email: 'sekretaris@orens.org', desc: 'Absensi, anggota, laporan' },
-    { role: 'Ketua Divisi', email: 'ketuadivisi@orens.org', desc: 'Kelola divisi UI/UX' },
-    { role: 'Mentor', email: 'mentor@orens.org', desc: 'Bimbingan divisi Web Dev' },
-    { role: 'Member', email: 'member@orens.org', desc: 'Scan QR dan lihat nilai' },
-  ];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,18 +20,6 @@ export const LoginPage: React.FC = () => {
     const res = await login(email, password);
     if (!res.success) {
       setError(res.error || 'Gagal masuk akun. Periksa email atau sandi Anda.');
-    }
-    setLoading(false);
-  };
-
-  const handleQuickLogin = async (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword('Orens2026!');
-    setError('');
-    setLoading(true);
-    const res = await login(demoEmail, 'Orens2026!');
-    if (!res.success) {
-      setError(res.error || 'Gagal login akun demo.');
     }
     setLoading(false);
   };
@@ -126,33 +104,6 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Login Switcher */}
-          <div className="mt-6 pt-5 border-t border-gray-100 dark:border-dark-700">
-            <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-gray-600 dark:text-gray-400">
-              <ShieldCheck className="w-3.5 h-3.5 text-orens-600" />
-              <span>Akses Cepat Akun Demo (7 Role):</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-              {demoAccounts.map((acc) => (
-                <button
-                  key={acc.role}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => handleQuickLogin(acc.email)}
-                  className="flex flex-col text-left p-2 rounded-lg bg-gray-50 dark:bg-dark-700/60 hover:bg-orens-50 dark:hover:bg-dark-700 border border-gray-200 dark:border-dark-600 transition-colors"
-                >
-                  <span className="text-xs font-bold text-gray-900 dark:text-gray-100 text-orens-700 dark:text-orens-400">
-                    {acc.role}
-                  </span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                    {acc.email}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>
