@@ -211,16 +211,16 @@ BEGIN
     ) VALUES (
         '22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 'ketua@orens.org', v_encrypted_pw, NOW(),
-        '{"provider":"email","providers":["email"]}', '{"full_name":"Fajar Pratama","role":"Ketua"}',
+        '{"provider":"email","providers":["email"]}', '{"full_name":"Gregorius Wibisono","role":"Ketua"}',
         NOW(), NOW()
     ) ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO users (id, email, full_name, role_id, is_active)
-    VALUES ('22222222-2222-2222-2222-222222222222', 'ketua@orens.org', 'Fajar Pratama', v_role_ketua, TRUE)
+    VALUES ('22222222-2222-2222-2222-222222222222', 'ketua@orens.org', 'Gregorius Wibisono', v_role_ketua, TRUE)
     ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, full_name = EXCLUDED.full_name;
 
     INSERT INTO members (id, nim, full_name, phone, status, join_date)
-    VALUES ('22222222-2222-2222-2222-222222222222', '2024001001', 'Fajar Pratama', '081234567891', 'active', '2024-01-15')
+    VALUES ('22222222-2222-2222-2222-222222222222', '2024001001', 'Gregorius Wibisono', '081234567891', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, status = EXCLUDED.status;
 
     -- 3. Wakil Ketua
