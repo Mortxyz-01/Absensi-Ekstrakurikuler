@@ -54,14 +54,15 @@ export async function verifyAttendance(
 
 export async function logAudit(action: string, targetType: string, targetId: string, reason: string, oldData?: any, newData?: any) {
   try {
-    await supabase.rpc('log_audit_event', {
+    const { error } = await supabase.rpc('log_audit_event', {
       p_action: action,
-      p_target_type: targetType,
+      p_target_table: targetType,
       p_target_id: targetId,
       p_reason: reason,
-      p_old_data: oldData ? JSON.stringify(oldData) : null,
-      p_new_data: newData ? JSON.stringify(newData) : null,
+      p_old_val: oldData ?? null,
+      p_new_val: newData ?? null,
     });
+    if (error) throw error;
   } catch (err) {
     console.warn('Audit log write error:', err);
   }

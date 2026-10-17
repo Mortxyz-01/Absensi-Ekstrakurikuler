@@ -301,7 +301,7 @@ export const AttendancePage: React.FC = () => {
           date: newDate,
           start_time: newStartTime,
           end_time: newEndTime,
-          status: 'scheduled',
+          status: 'draft',
           backup_code: backupCode,
           late_threshold_minutes: Number(newLateThreshold),
           created_by: profile?.id,
