@@ -261,33 +261,58 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   return (
     <div className="space-y-6">
       {/* 1. GREETING & HERO BANNER */}
-      <div className="bg-gradient-to-r from-gray-900 via-dark-800 to-gray-900 text-white rounded-2xl p-6 sm:p-7 border border-gray-800 shadow-md">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="px-2.5 py-0.5 rounded-full bg-orens-600/30 text-orens-400 text-xs font-mono font-bold tracking-wide">
-                Portal Ekstrakurikuler Orens
-              </span>
-              <span className="text-gray-400 text-xs">
-                {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-dark-900 to-slate-950 p-6 sm:p-7 border border-slate-800 shadow-lg shadow-black/10 text-white">
+        {/* Subtle ambient brand glow */}
+        <div className="pointer-events-none absolute -right-16 -top-16 w-56 h-56 rounded-full bg-orens-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-1/3 -bottom-12 w-48 h-48 rounded-full bg-amber-500/5 blur-2xl" />
+
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+          <div className="space-y-3">
+            {/* Top Tag & Date Row */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orens-500/15 border border-orens-500/30 text-orens-400 text-xs font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-orens-500 animate-pulse" />
+                <span>Portal Ekstrakurikuler Orens</span>
+              </div>
+              <span className="text-slate-400 text-xs flex items-center gap-1.5 font-medium">
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <span>
+                  {new Date().toLocaleDateString('id-ID', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </span>
               </span>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-              {greeting}, {profile?.full_name}!
-            </h1>
+            {/* Greeting & Name */}
+            <div className="flex flex-wrap items-baseline gap-2 pt-0.5">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                {greeting},{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-orens-400 via-amber-300 to-orens-400">
+                  {profile?.full_name || 'Pengurus'}
+                </span>
+              </h1>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/10 text-slate-200 text-xs font-semibold border border-white/10 self-center">
+                {role || 'Anggota'}
+              </span>
+            </div>
 
-            <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl">
+            {/* Role Description */}
+            <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
               {isMemberOnly
-                ? `Divisi kamu: ${(profile?.divisions || []).map((d: any) => d.division?.name || 'Game Development').join(', ') || 'Game Development'}. Pantau jadwal dan grafik kehadiran di bawah.`
+                ? `Divisi kamu: ${(profile?.divisions || []).map((d: any) => d.division?.name || 'Game Development').join(', ') || 'Game Development'}. Pantau jadwal pertemuan dan grafik kehadiran harian di bawah.`
                 : `Masuk sebagai ${role || 'Pengurus'}. Pantau operasional 5 divisi peminatan dan grafik presensi harian.`}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Quick Action Button */}
+          <div className="flex items-center gap-2 shrink-0 self-stretch sm:self-auto">
             <button
               onClick={() => onNavigate('attendance')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orens-600 hover:bg-orens-700 active:bg-orens-800 text-white text-xs font-bold transition-colors shadow-sm"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orens-600 hover:bg-orens-500 active:bg-orens-700 text-white text-xs font-bold transition-all shadow-md shadow-orens-600/30 hover:shadow-orens-600/50"
             >
               <QrCode className="w-4 h-4" />
               <span>{isMemberOnly ? 'Absensi Sekarang' : 'Buka Presensi QR'}</span>
