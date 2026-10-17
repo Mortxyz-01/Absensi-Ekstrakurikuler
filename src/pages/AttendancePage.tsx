@@ -81,8 +81,17 @@ export const AttendancePage: React.FC = () => {
       if (sessErr) throw sessErr;
       setSessions(sessData || []);
 
-      // Check if any session is open
-      const openSess = (sessData || []).find((s) => s.status === 'open');
+      // Check if any session is open matching user's division
+      let openSess: AttendanceSession | undefined;
+      if (isMemberOnly && profile?.divisions && profile.divisions.length > 0) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        openSess = (sessData || []).find(
+          (s) => s.status === 'open' && (!s.division_id || myDivIds.has(s.division_id))
+        );
+      } else {
+        openSess = (sessData || []).find((s) => s.status === 'open');
+      }
+
       if (openSess) {
         setActiveSession(openSess);
       } else {
@@ -352,15 +361,40 @@ export const AttendancePage: React.FC = () => {
     setScanResult(null);
 
     try {
-      // Find currently open session
-      const targetSession = activeSession || sessions.find((s) => s.status === 'open');
+      // Find currently open session matching student's enrolled division or general
+      let targetSession = activeSession;
+      if (!targetSession) {
+        if (isMemberOnly && profile?.divisions && profile.divisions.length > 0) {
+          const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+          targetSession = sessions.find(
+            (s) => s.status === 'open' && (!s.division_id || myDivIds.has(s.division_id))
+          ) || null;
+        } else {
+          targetSession = sessions.find((s) => s.status === 'open') || null;
+        }
+      }
+
       if (!targetSession) {
         setScanResult({
           success: false,
-          message: 'Tidak ada sesi absensi yang sedang dibuka oleh admin.',
+          message: 'Tidak ada sesi absensi yang sedang dibuka untuk divisi kamu saat ini.',
         });
         setScanLoading(false);
         return;
+      }
+
+      // Explicit division guard: Member of Division A cannot attend Division B sessions
+      if (targetSession.division_id && isMemberOnly && profile?.divisions) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        if (!myDivIds.has(targetSession.division_id)) {
+          const myDivNames = profile.divisions.map((d: any) => d.division?.name || 'terdaftar').join(', ');
+          setScanResult({
+            success: false,
+            message: `Akses ditolak: Kamu hanya terdaftar di divisi "${myDivNames}". Kamu tidak berhak absen pada sesi divisi lain!`,
+          });
+          setScanLoading(false);
+          return;
+        }
       }
 
       // Check whether user pasted token or backup code
