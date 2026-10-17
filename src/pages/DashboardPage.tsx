@@ -5,31 +5,42 @@ import {
   Users,
   Calendar,
   CheckCircle2,
-  Zap,
-  TrendingUp,
-  ShieldCheck,
   Clock,
   ArrowRight,
   QrCode,
+  Layers,
+  BookOpen,
+  FileCheck2,
+  Award,
+  Activity,
+  ChevronRight,
+  Sparkles,
+  Shield,
+  UserCheck,
 } from 'lucide-react';
 import { LoadingSpinner, ErrorState } from '../components/UIState';
-import { AttendanceSession } from '../types';
+import { AttendanceSession, Division } from '../types';
 
 interface DashboardPageProps {
   onNavigate: (tab: string) => void;
 }
 
-interface DailyAttendancePoint {
-  dateLabel: string;
-  count: number;
-}
-
-interface DivisionPerformance {
+interface DivisionOverview {
+  id: string;
   name: string;
   code: string;
-  count: number;
-  percentage: number;
+  memberCount: number;
+  leadName?: string;
   color: string;
+}
+
+interface RecentActivityItem {
+  id: string;
+  studentName: string;
+  divisionName: string;
+  scanTime: string;
+  status: string;
+  sessionTitle: string;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
@@ -37,140 +48,171 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Top Metrics State
+  // Operational Metrics
   const [totalMembers, setTotalMembers] = useState(0);
-  const [activeMembersCount, setActiveMembersCount] = useState(0);
   const [totalSessions, setTotalSessions] = useState(0);
-  const [activeSessionsCount, setActiveSessionsCount] = useState(0);
-  const [attendanceRate, setAttendanceRate] = useState(0);
-  const [totalRecordsCount, setTotalRecordsCount] = useState(0);
-  const [activeSession, setActiveSession] = useState<AttendanceSession | null>(null);
+  const [overallAttendanceRate, setOverallAttendanceRate] = useState(0);
+  const [openSession, setOpenSession] = useState<AttendanceSession | null>(null);
 
-  // Chart Data State
-  const [dailyTrend, setDailyTrend] = useState<DailyAttendancePoint[]>([]);
-  const [divisionPerf, setDivisionPerf] = useState<DivisionPerformance[]>([]);
-  const [hoveredPoint, setHoveredPoint] = useState<DailyAttendancePoint | null>(null);
+  // Division stats
+  const [divisionList, setDivisionList] = useState<DivisionOverview[]>([]);
+
+  // Recent Sessions
+  const [recentSessions, setRecentSessions] = useState<AttendanceSession[]>([]);
+
+  // Recent Live Attendance Activity
+  const [recentActivities, setRecentActivities] = useState<RecentActivityItem[]>([]);
+
+  // Member Personal Metrics
+  const [myAttendanceCount, setMyAttendanceCount] = useState(0);
+  const [myTotalEligibleSessions, setMyTotalEligibleSessions] = useState(0);
+  const [myAverageGrade, setMyAverageGrade] = useState<number | null>(null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     setError('');
     try {
-      // 1. Fetch active session
-      const { data: activeSessData } = await supabase
-        .from('attendance_sessions')
-        .select('*, division:divisions(*)')
-        .eq('status', 'open')
-        .order('opened_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // 1. Fetch Divisions
+      const { data: divData, error: divErr } = await supabase
+        .from('divisions')
+        .select('*')
+        .order('name');
+      if (divErr) throw divErr;
 
-      setActiveSession(activeSessData || null);
-
-      // 2. Counts: Members & Sessions
-      const [
-        { count: memCount },
-        { count: sessCount },
-        { count: openCount },
-        { count: totalRecords },
-        { count: attendedRecords },
-      ] = await Promise.all([
-        supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
-        supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }),
-        supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('status', 'open'),
-        supabase.from('attendance_records').select('*', { count: 'exact', head: true }),
-        supabase.from('attendance_records').select('*', { count: 'exact', head: true }).in('status', ['Hadir', 'Terlambat']),
-      ]);
-
-      const totMem = memCount || 11;
-      const totSess = sessCount || 7;
-      const openSess = openCount || 0;
-      const totRec = totalRecords || 0;
-      const attRec = attendedRecords || 0;
-
-      // Calculate attendance rate
-      // If records exist: percentage of Hadir+Terlambat out of total records or sessions*members
-      const rate = totRec > 0 ? Math.round((attRec / totRec) * 1000) / 10 : 13.5;
-
-      setTotalMembers(totMem);
-      setActiveMembersCount(attRec > 0 ? attRec : 23);
-      setTotalSessions(totSess);
-      setActiveSessionsCount(openSess);
-      setAttendanceRate(rate);
-      setTotalRecordsCount(totRec > 0 ? totRec : 27);
-
-      // 3. 7-Day Attendance Trend
-      // Build past 7 days: 11 Oct to 17 Oct 2026
-      const days = [
-        { key: '2026-10-11', label: '11 Oct' },
-        { key: '2026-10-12', label: '12 Oct' },
-        { key: '2026-10-13', label: '13 Oct' },
-        { key: '2026-10-14', label: '14 Oct' },
-        { key: '2026-10-15', label: '15 Oct' },
-        { key: '2026-10-16', label: '16 Oct' },
-        { key: '2026-10-17', label: '17 Oct' },
-      ];
-
-      const { data: recData } = await supabase
-        .from('attendance_records')
-        .select('scan_time, status');
-
-      const dateCountMap: Record<string, number> = {};
-      (recData || []).forEach((r: any) => {
-        if (r.scan_time) {
-          const dStr = r.scan_time.split('T')[0];
-          dateCountMap[dStr] = (dateCountMap[dStr] || 0) + 1;
-        }
-      });
-
-      const trendData: DailyAttendancePoint[] = days.map((d) => ({
-        dateLabel: d.label,
-        count: dateCountMap[d.key] || 0,
-      }));
-
-      setDailyTrend(trendData);
-
-      // 4. Division Attendance Distribution (5 divisions)
-      const divisionConfigs = [
-        { name: 'Game Development', code: 'gamedev', color: '#EA580C', weight: 15 },
-        { name: 'Web Development', code: 'webdev', color: '#2563EB', weight: 25 },
-        { name: 'Cyber Security', code: 'cybersec', color: '#10B981', weight: 15 },
-        { name: 'E-Sport', code: 'esport', color: '#8B5CF6', weight: 15 },
-        { name: 'UI/UX', code: 'uiux', color: '#EC4899', weight: 30 },
-      ];
-
-      // Fetch actual counts from member_divisions or attendance_records
-      const { data: memDivData } = await supabase
-        .from('member_divisions')
-        .select('division:divisions(name, code)')
+      // 2. Fetch Users & Roles
+      const { data: usersData, error: uErr } = await supabase
+        .from('users')
+        .select('id, full_name, email, role:roles(name)')
         .eq('is_active', true);
+      if (uErr) throw uErr;
 
-      const divCounts: Record<string, number> = {};
+      const userMap = new Map((usersData || []).map((u: any) => [u.id, u]));
+
+      // 3. Fetch Member Divisions
+      const { data: memDivData, error: mdErr } = await supabase
+        .from('member_divisions')
+        .select('member_id, division_id, classification, is_active')
+        .eq('is_active', true);
+      if (mdErr) throw mdErr;
+
+      // Count members per division
+      const divCountMap: Record<string, number> = {};
+      const memberDivisionMap = new Map<string, string[]>();
+
       (memDivData || []).forEach((md: any) => {
-        const c = md.division?.code;
-        if (c) divCounts[c] = (divCounts[c] || 0) + 1;
+        divCountMap[md.division_id] = (divCountMap[md.division_id] || 0) + 1;
+        if (!memberDivisionMap.has(md.member_id)) {
+          memberDivisionMap.set(md.member_id, []);
+        }
+        memberDivisionMap.get(md.member_id)!.push(md.division_id);
       });
 
-      const totalDivCount = Object.values(divCounts).reduce((a, b) => a + b, 0);
-
-      const computedDivs: DivisionPerformance[] = divisionConfigs.map((cfg) => {
-        const actual = divCounts[cfg.code] || 0;
-        // If data is sparse, use weighted visual proportions so all 5 divisions render cleanly
-        const pct = totalDivCount > 0 && actual > 0
-          ? Math.round((actual / totalDivCount) * 100)
-          : cfg.weight;
-
+      const colors = ['#ea580c', '#2563eb', '#10b981', '#8b5cf6', '#ec4899'];
+      const formattedDivisions: DivisionOverview[] = (divData || []).map((d: any, idx: number) => {
+        const lead = d.lead_id ? userMap.get(d.lead_id) : undefined;
         return {
-          name: cfg.name,
-          code: cfg.code,
-          count: actual,
-          percentage: pct,
-          color: cfg.color,
+          id: d.id,
+          name: d.name,
+          code: d.code,
+          memberCount: divCountMap[d.id] || 0,
+          leadName: lead?.full_name,
+          color: colors[idx % colors.length],
         };
       });
+      setDivisionList(formattedDivisions);
+      setTotalMembers((usersData || []).length);
 
-      setDivisionPerf(computedDivs);
+      // 4. Fetch Attendance Sessions
+      const { data: sessData, error: sErr } = await supabase
+        .from('attendance_sessions')
+        .select('*, division:divisions(name, code)')
+        .order('created_at', { ascending: false });
+      if (sErr) throw sErr;
+
+      const allSessions: AttendanceSession[] = sessData || [];
+      setTotalSessions(allSessions.length);
+      setRecentSessions(allSessions.slice(0, 4));
+
+      // Determine active open session
+      // For member: strictly filter to their division or general
+      if (isMemberOnly && profile?.divisions && profile.divisions.length > 0) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        const matchedOpen = allSessions.find(
+          (s) => s.status === 'open' && (!s.division_id || myDivIds.has(s.division_id))
+        );
+        setOpenSession(matchedOpen || null);
+      } else {
+        const anyOpen = allSessions.find((s) => s.status === 'open');
+        setOpenSession(anyOpen || null);
+      }
+
+      // 5. Fetch Attendance Records for Rate & Activity Feed
+      const { data: recData, error: recErr } = await supabase
+        .from('attendance_records')
+        .select(`
+          id, session_id, member_id, status, scan_time, verification_method,
+          member:users(full_name, email),
+          session:attendance_sessions(title, division_id, division:divisions(name))
+        `)
+        .order('scan_time', { ascending: false });
+      if (recErr) throw recErr;
+
+      const allRecords = recData || [];
+      const attendedCount = allRecords.filter((r) => r.status === 'Hadir' || r.status === 'Terlambat').length;
+      const rate = allRecords.length > 0 ? Math.round((attendedCount / allRecords.length) * 100) : 100;
+      setOverallAttendanceRate(rate);
+
+      // Format recent 5 activity scans
+      const activities: RecentActivityItem[] = allRecords.slice(0, 5).map((r: any) => {
+        const rawMem = Array.isArray(r.member) ? r.member[0] : r.member;
+        const rawSess = Array.isArray(r.session) ? r.session[0] : r.session;
+        const rawDiv = rawSess?.division ? (Array.isArray(rawSess.division) ? rawSess.division[0] : rawSess.division) : null;
+
+        return {
+          id: r.id,
+          studentName: rawMem?.full_name || 'Siswa',
+          divisionName: rawDiv?.name || 'Ekstrakurikuler',
+          scanTime: r.scan_time ? new Date(r.scan_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-',
+          status: r.status,
+          sessionTitle: rawSess?.title || 'Sesi Presensi',
+        };
+      });
+      setRecentActivities(activities);
+
+      // 6. If Member: calculate personal stats
+      if (profile && isMemberOnly) {
+        const myDivIds = new Set((profile.divisions || []).map((d: any) => d.division_id));
+        const mySessions = allSessions.filter(
+          (s) => s.status === 'closed' && (!s.division_id || myDivIds.has(s.division_id))
+        );
+        setMyTotalEligibleSessions(mySessions.length);
+
+        const myRecs = allRecords.filter((r) => r.member_id === profile.id && (r.status === 'Hadir' || r.status === 'Terlambat'));
+        setMyAttendanceCount(myRecs.length);
+
+        // Fetch assignment grades
+        const { data: subData } = await supabase
+          .from('assignment_submissions')
+          .select('id, grade:assignment_grades(normalized_score)')
+          .eq('member_id', profile.id);
+
+        const scores: number[] = [];
+        (subData || []).forEach((s: any) => {
+          const rawG = Array.isArray(s.grade) ? s.grade[0] : s.grade;
+          if (rawG?.normalized_score !== undefined && rawG?.normalized_score !== null) {
+            scores.push(Number(rawG.normalized_score));
+          }
+        });
+
+        if (scores.length > 0) {
+          const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+          setMyAverageGrade(avg);
+        } else {
+          setMyAverageGrade(null);
+        }
+      }
     } catch (err: any) {
-      console.error('Error loading dashboard data:', err);
+      console.error('Dashboard fetch error:', err);
       setError(err.message || 'Gagal memuat ringkasan portal.');
     } finally {
       setLoading(false);
@@ -182,346 +224,422 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   }, [profile]);
 
   if (loading) {
-    return <LoadingSpinner message="Menyiapkan ringkasan portal..." />;
+    return <LoadingSpinner message="Menyiapkan data dashboard..." />;
   }
 
   if (error) {
     return <ErrorState message={error} onRetry={fetchDashboardData} />;
   }
 
-  // Calculate SVG Line Chart coordinates
-  const chartHeight = 220;
-  const chartWidth = 600;
-  const paddingX = 40;
-  const paddingY = 30;
-  const maxVal = Math.max(1, ...dailyTrend.map((d) => d.count));
-  const points = dailyTrend.map((d, index) => {
-    const x = paddingX + (index * (chartWidth - 2 * paddingX)) / (dailyTrend.length - 1);
-    const y = chartHeight - paddingY - (d.count / maxVal) * (chartHeight - 2 * paddingY);
-    return { x, y, ...d };
-  });
-
-  const pathD = points.reduce((acc, p, i) => {
-    return i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
-  }, '');
-
-  // Calculate Donut Segments
-  const radius = 64;
-  const circumference = 2 * Math.PI * radius; // ~402.12
-  let accumulatedPercent = 0;
+  // Greeting based on time
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 12 ? 'Selamat Pagi' : currentHour < 15 ? 'Selamat Siang' : currentHour < 18 ? 'Selamat Sore' : 'Selamat Malam';
 
   return (
     <div className="space-y-6">
-      {/* Header Row */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight">
-            Ringkasan Portal
-          </h1>
-          <div className="mt-1">
-            <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold text-orens-600 bg-orens-50 dark:bg-orens-950/40 border border-orens-200 dark:border-orens-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-orens-500" />
-              ORENS SOLUTION
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 text-gray-700 dark:text-gray-300 shadow-sm">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>17 Oct 2026</span>
-          </div>
-
-          <div className="flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/50 shadow-sm">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>PDPA COMPLIANT</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 4 Stat Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Total Anggota */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-500 flex items-center justify-center">
-              <Users className="w-5 h-5" />
+      {/* 1. PURPOSEFUL WELCOME HEADER */}
+      <div className="bg-gradient-to-r from-gray-900 via-dark-800 to-gray-900 text-white rounded-2xl p-6 sm:p-7 border border-gray-800 shadow-md">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="px-2.5 py-0.5 rounded-full bg-orens-600/30 text-orens-400 text-xs font-mono font-bold tracking-wide">
+                Portal Ekstrakurikuler Orens
+              </span>
+              <span className="text-gray-400 text-xs">
+                {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </span>
             </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
-              <TrendingUp className="w-3 h-3" />
-              <span>29.1% Aktif</span>
-            </span>
+
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+              {greeting}, {profile?.full_name}!
+            </h1>
+
+            <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl">
+              {isMemberOnly
+                ? `Kamu terdaftar di divisi ${(profile?.divisions || []).map((d: any) => d.division?.name).join(', ') || 'Ekstrakurikuler'}. Pantau jadwal dan presensi kamu di sini.`
+                : `Masuk sebagai ${role || 'Pengurus'}. Kelola presensi, evaluasi siswa, dan monitoring aktivitas 5 divisi peminatan.`}
+            </p>
           </div>
 
-          <div className="mt-4">
-            <span className="text-[11px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">
-              TOTAL ANGGOTA
-            </span>
-            <div className="text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
-              {totalMembers}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>{activeMembersCount} anggota aktif presensi</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 2: Total Sesi */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="w-11 h-11 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-500 flex items-center justify-center">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-400 border border-purple-200 dark:border-purple-900/40">
-              <TrendingUp className="w-3 h-3" />
-              <span>{activeSessionsCount > 0 ? 'Aktif' : '0% Aktif Saat Ini'}</span>
-            </span>
-          </div>
-
-          <div className="mt-4">
-            <span className="text-[11px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">
-              TOTAL SESI
-            </span>
-            <div className="text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
-              {totalSessions}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-              <span>{activeSessionsCount} sesi berlangsung</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Tingkat Kehadiran */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
-              <TrendingUp className="w-3 h-3" />
-              <span>Perlu Tingkat</span>
-            </span>
-          </div>
-
-          <div className="mt-4">
-            <span className="text-[11px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">
-              TINGKAT KEHADIRAN
-            </span>
-            <div className="text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
-              {attendanceRate}%
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>{totalRecordsCount} presensi tercatat</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 4: Sesi Aktif */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-5 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center">
-              <Zap className="w-5 h-5" />
-            </div>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              <span>Real-Time</span>
-            </span>
-          </div>
-
-          <div className="mt-4">
-            <span className="text-[11px] font-bold tracking-wider text-gray-400 dark:text-gray-500 uppercase">
-              SESI AKTIF
-            </span>
-            <div className="text-3xl font-black text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
-              {activeSessionsCount}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mt-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              <span>0% sesi berlangsung saat ini</span>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isMemberOnly ? (
+              <button
+                onClick={() => onNavigate('attendance')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orens-600 hover:bg-orens-700 active:bg-orens-800 text-white text-xs font-bold transition-colors shadow-sm"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Absensi Sekarang</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => onNavigate('attendance')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orens-600 hover:bg-orens-700 active:bg-orens-800 text-white text-xs font-bold transition-colors shadow-sm"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Buka Presensi QR</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Active Session Callout if open */}
-      {activeSession && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500 text-white rounded-xl shadow-sm">
-              <Clock className="w-4 h-4 animate-pulse" />
+      {/* 2. REAL-TIME ACTIVE SESSION ALERT (If open) */}
+      {openSession && (
+        <div className="bg-orens-50 dark:bg-orens-950/30 border-2 border-orens-500/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 bg-orens-600 text-white rounded-xl shrink-0 shadow-sm">
+              <Clock className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <p className="text-xs font-bold text-amber-800 dark:text-amber-300">
-                Sesi Berlangsung: {activeSession.title}
-              </p>
-              <p className="text-[11px] text-gray-600 dark:text-gray-400">
-                Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kode Cadangan: <strong className="font-mono text-orens-600">{activeSession.backup_code}</strong>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                <span className="text-xs font-bold uppercase tracking-wider text-orens-700 dark:text-orens-400">
+                  Sesi Presensi Sedang Dibuka
+                </span>
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-gray-100 mt-0.5">
+                {openSession.title}
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Divisi: {openSession.division?.name || 'Semua Divisi'} • Kode Cadangan: <strong className="font-mono text-orens-700 dark:text-orens-400">{openSession.backup_code}</strong>
               </p>
             </div>
           </div>
+
           <button
             onClick={() => onNavigate('attendance')}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 rounded-lg shadow-sm"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 rounded-xl transition-colors shadow-sm shrink-0 self-end sm:self-auto"
           >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>{isMemberOnly ? 'Absen Sekarang' : 'Kelola Presensi'}</span>
+            <span>{isMemberOnly ? 'Pindai / Masukkan Kode' : 'Buka Layar QR Pop-up'}</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Two Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Chart: Tren Kehadiran Harian (2/3 width) */}
-        <div className="lg:col-span-2 bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-1.5 h-4 bg-orens-600 rounded-full inline-block" />
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
-              Tren Kehadiran Harian (7 Hari Terakhir)
-            </h3>
+      {/* 3. CORE METRICS - ADAPTIVE TO ROLE */}
+      {isMemberOnly ? (
+        /* Member Personalized Metrics */
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Kehadiran Sesi Wajib</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {myAttendanceCount} <span className="text-sm font-semibold text-gray-400">/ {myTotalEligibleSessions} Sesi</span>
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              {myTotalEligibleSessions > 0
+                ? `${Math.round((myAttendanceCount / myTotalEligibleSessions) * 100)}% kehadiran tercatat`
+                : 'Belum ada sesi wajib yang selesai'}
+            </p>
           </div>
 
-          <div className="relative w-full overflow-hidden">
-            <svg
-              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-              className="w-full h-56 select-none"
-            >
-              {/* Horizontal Grid lines */}
-              <line
-                x1={paddingX}
-                y1={paddingY}
-                x2={chartWidth - paddingX}
-                y2={paddingY}
-                stroke="#e5e7eb"
-                strokeDasharray="4 4"
-                className="dark:stroke-dark-700"
-              />
-              <line
-                x1={paddingX}
-                y1={chartHeight - paddingY}
-                x2={chartWidth - paddingX}
-                y2={chartHeight - paddingY}
-                stroke="#e5e7eb"
-                className="dark:stroke-dark-700"
-              />
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Rata-Rata Tugas</span>
+              <FileCheck2 className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {myAverageGrade !== null ? myAverageGrade : '-'}
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              {myAverageGrade !== null ? 'Evaluasi dari mentor divisi' : 'Belum ada tugas yang dinilai'}
+            </p>
+          </div>
 
-              {/* Y Axis Labels */}
-              <text
-                x={paddingX - 10}
-                y={paddingY + 4}
-                textAnchor="end"
-                className="text-[10px] fill-gray-400 font-mono"
-              >
-                {maxVal}
-              </text>
-              <text
-                x={paddingX - 10}
-                y={chartHeight - paddingY + 3}
-                textAnchor="end"
-                className="text-[10px] fill-gray-400 font-mono"
-              >
-                0
-              </text>
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Divisi Terdaftar</span>
+              <Layers className="w-4 h-4 text-purple-600" />
+            </div>
+            <div className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-2 line-clamp-1">
+              {(profile?.divisions || []).map((d: any) => d.division?.name).join(', ') || 'Belum Terdaftar'}
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              Status anggota aktif
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* Staff / Admin Operational Metrics */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Total Siswa Terdaftar</span>
+              <Users className="w-4 h-4 text-blue-600" />
+            </div>
+            <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {totalMembers}
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              Tersebar di 5 divisi peminatan
+            </p>
+          </div>
 
-              {/* Line */}
-              <path
-                d={pathD}
-                fill="none"
-                stroke="#ea580c"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Tingkat Kehadiran</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {overallAttendanceRate}%
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              Rasio hadir pada sesi selesai
+            </p>
+          </div>
 
-              {/* Data Points */}
-              {points.map((p, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={p.x}
-                    cy={p.y}
-                    r={hoveredPoint?.dateLabel === p.dateLabel ? 6 : 4}
-                    fill="#ea580c"
-                    stroke="#ffffff"
-                    strokeWidth="2"
-                    className="cursor-pointer transition-all"
-                    onMouseEnter={() => setHoveredPoint(p)}
-                    onMouseLeave={() => setHoveredPoint(null)}
-                  />
-                  {/* X Axis Date Label */}
-                  <text
-                    x={p.x}
-                    y={chartHeight - paddingY + 18}
-                    textAnchor="middle"
-                    className="text-[10px] fill-gray-400 font-medium"
-                  >
-                    {p.dateLabel}
-                  </text>
-                </g>
-              ))}
-            </svg>
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Total Sesi Pertemuan</span>
+              <Calendar className="w-4 h-4 text-purple-600" />
+            </div>
+            <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {totalSessions}
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              {openSession ? '1 sesi aktif berlangsung' : 'Semua sesi terjadwal'}
+            </p>
+          </div>
 
-            {/* Hover Tooltip */}
-            {hoveredPoint && (
-              <div
-                className="absolute top-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2.5 py-1 rounded-md shadow-lg pointer-events-none"
-              >
-                {hoveredPoint.dateLabel}: {hoveredPoint.count} Kehadiran
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+              <span>Divisi Peminatan</span>
+              <Layers className="w-4 h-4 text-orens-600" />
+            </div>
+            <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
+              {divisionList.length}
+            </div>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+              1 Kadiv & 2 Mentor per divisi
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 4. MAIN WORKSPACE: 5 DIVISIONS OVERVIEW & RECENT SESSIONS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column (2/3): 5 Divisions Capacity & Recent Sessions */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* 5 Divisions Breakdown */}
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-orens-600" />
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  Distribusi Siswa di 5 Divisi Peminatan
+                </h3>
               </div>
-            )}
+              <button
+                onClick={() => onNavigate('divisions')}
+                className="text-xs font-semibold text-orens-600 hover:text-orens-700 flex items-center gap-1"
+              >
+                <span>Lihat Detail</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {divisionList.map((div) => {
+                const percentage = totalMembers > 0 ? Math.round((div.memberCount / totalMembers) * 100) : 0;
+
+                return (
+                  <div
+                    key={div.id}
+                    className="p-3.5 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/60 dark:bg-dark-900/40 flex flex-col gap-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-gray-900 dark:text-gray-100">
+                            {div.name}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-gray-200 dark:bg-dark-700 text-gray-700 dark:text-gray-300">
+                            {div.code.toUpperCase()}
+                          </span>
+                        </div>
+                        {div.leadName && (
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                            Ketua Divisi: {div.leadName}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-sm font-extrabold text-gray-900 dark:text-gray-100">
+                          {div.memberCount} Siswa
+                        </span>
+                        <span className="text-[11px] text-gray-400 ml-1.5 font-medium">
+                          ({percentage}%)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full bg-gray-200 dark:bg-dark-700 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-1.5 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.max(8, percentage)}%`,
+                          backgroundColor: div.color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sesi Terjadwal & Riwayat */}
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-purple-600" />
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  Agenda Sesi Presensi Terbaru
+                </h3>
+              </div>
+              <button
+                onClick={() => onNavigate('attendance')}
+                className="text-xs font-semibold text-orens-600 hover:text-orens-700 flex items-center gap-1"
+              >
+                <span>Kelola Presensi</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {recentSessions.map((sess) => (
+                <div
+                  key={sess.id}
+                  className="p-3 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/50 dark:bg-dark-900/40 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
+                      {sess.title}
+                    </p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      Tanggal: {sess.date} • {sess.start_time} - {sess.end_time} WIB
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        sess.status === 'open'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : sess.status === 'closed'
+                          ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+                          : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                      }`}
+                    >
+                      {sess.status === 'open' ? 'Buka' : sess.status === 'closed' ? 'Selesai' : 'Terjadwal'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Right Chart: Performa Kehadiran Divisi (1/3 width) */}
-        <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200/80 dark:border-dark-700 p-6 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-1.5 h-4 bg-orens-600 rounded-full inline-block" />
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
-              Performa Kehadiran Divisi
-            </h3>
-          </div>
-
-          {/* Donut Chart SVG */}
-          <div className="flex items-center justify-center py-2">
-            <svg width="180" height="180" viewBox="0 0 180 180" className="rotate-[-90deg]">
-              {divisionPerf.map((div, i) => {
-                const strokeLength = (div.percentage / 100) * circumference;
-                // Leave a small 2px gap between segments
-                const dashArray = `${Math.max(0, strokeLength - 3)} ${circumference}`;
-                const dashOffset = -(accumulatedPercent / 100) * circumference;
-                accumulatedPercent += div.percentage;
-
-                return (
-                  <circle
-                    key={div.code}
-                    cx="90"
-                    cy="90"
-                    r={radius}
-                    fill="transparent"
-                    stroke={div.color}
-                    strokeWidth="24"
-                    strokeDasharray={dashArray}
-                    strokeDashoffset={dashOffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-500 hover:opacity-80"
-                  />
-                );
-              })}
-            </svg>
-          </div>
-
-          {/* Division Legend */}
-          <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 pt-4 border-t border-gray-100 dark:border-dark-700 text-[11px]">
-            {divisionPerf.map((div) => (
-              <div key={div.code} className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: div.color }}
-                />
-                <span>{div.name}</span>
+        {/* Right Column (1/3): Real-Time Scan Feed & Quick Links */}
+        <div className="space-y-6">
+          {/* Live Recent Attendance Activity */}
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                  Presensi Terakhir
+                </h3>
               </div>
-            ))}
+              <span className="text-[10px] text-gray-400 font-medium">Real-Time</span>
+            </div>
+
+            {recentActivities.length === 0 ? (
+              <p className="text-xs text-gray-400 italic py-6 text-center">
+                Belum ada rekaman presensi terbaru.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {recentActivities.map((act) => (
+                  <div
+                    key={act.id}
+                    className="p-3 rounded-xl border border-gray-100 dark:border-dark-700/60 bg-gray-50/50 dark:bg-dark-900/30 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
+                        {act.studentName}
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
+                        {act.divisionName} • {act.scanTime} WIB
+                      </p>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        act.status === 'Hadir'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      }`}
+                    >
+                      {act.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Quick Access Menu */}
+          <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-6 shadow-sm space-y-3">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 pb-2 border-b border-gray-100 dark:border-dark-700">
+              Navigasi Cepat
+            </h3>
+
+            <button
+              onClick={() => onNavigate('grades')}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-dark-700 hover:bg-gray-50 dark:hover:bg-dark-700/50 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <Award className="w-4 h-4 text-orens-600" />
+                <div>
+                  <div className="text-xs font-bold text-gray-900 dark:text-gray-100">Rapor & Penilaian</div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400">Formula Kehadiran 40% + Tugas 60%</div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => onNavigate('materials')}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-dark-700 hover:bg-gray-50 dark:hover:bg-dark-700/50 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <BookOpen className="w-4 h-4 text-blue-600" />
+                <div>
+                  <div className="text-xs font-bold text-gray-900 dark:text-gray-100">Modul & Materi</div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400">Silabus dan bahan ajar peminatan</div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </button>
+
+            <button
+              onClick={() => onNavigate('assignments')}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-dark-700 hover:bg-gray-50 dark:hover:bg-dark-700/50 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                <div>
+                  <div className="text-xs font-bold text-gray-900 dark:text-gray-100">Tugas Divisi</div>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400">Pengumpulan dan penilaian proyek</div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+            </button>
           </div>
         </div>
       </div>
