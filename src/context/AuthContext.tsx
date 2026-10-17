@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: divData } = await supabase
         .from('member_divisions')
         .select(`
-          id, member_id, division_id, is_primary, is_active,
+          id, member_id, division_id, classification, is_active,
           division:divisions (id, name, code, description, is_active)
         `)
         .eq('member_id', userId)
