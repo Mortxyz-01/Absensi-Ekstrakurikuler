@@ -329,16 +329,22 @@ ON session_participants FOR ALL
 TO authenticated
 USING (
     is_officer()
-    OR session_id IN (
-        SELECT id FROM attendance_sessions
-        WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND session_id IN (
+            SELECT id FROM attendance_sessions
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
     )
 )
 WITH CHECK (
     is_officer()
-    OR session_id IN (
-        SELECT id FROM attendance_sessions
-        WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND session_id IN (
+            SELECT id FROM attendance_sessions
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
     )
 );
 
@@ -348,9 +354,12 @@ ON attendance_qr_tokens FOR SELECT
 TO authenticated
 USING (
     is_officer()
-    OR session_id IN (
-        SELECT id FROM attendance_sessions
-        WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND session_id IN (
+            SELECT id FROM attendance_sessions
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
     )
 );
 
@@ -359,16 +368,22 @@ ON attendance_qr_tokens FOR ALL
 TO authenticated
 USING (
     is_officer()
-    OR session_id IN (
-        SELECT id FROM attendance_sessions
-        WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND session_id IN (
+            SELECT id FROM attendance_sessions
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
     )
 )
 WITH CHECK (
     is_officer()
-    OR session_id IN (
-        SELECT id FROM attendance_sessions
-        WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND session_id IN (
+            SELECT id FROM attendance_sessions
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
     )
 );
 
@@ -388,19 +403,18 @@ USING (
     OR member_id = auth.uid()
 );
 
-CREATE POLICY "Attendance records insertable by self scan or authorized officers"
+CREATE POLICY "Attendance records insertable by authorized officers"
 ON attendance_records FOR INSERT
 TO authenticated
 WITH CHECK (
     is_officer()
     OR (
-        auth_user_role() = 'Ketua Divisi'
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
         AND session_id IN (
             SELECT id FROM attendance_sessions
-            WHERE division_id IN (SELECT division_id FROM auth_user_division_ids())
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
         )
     )
-    OR (member_id = auth.uid())
 );
 
 CREATE POLICY "Attendance records updateable by authorized officers with audit"
@@ -600,10 +614,20 @@ USING (
     )
 );
 
-CREATE POLICY "Submissions insertable by member for self"
+CREATE POLICY "Submissions insertable by member for self or division mentors"
 ON assignment_submissions FOR INSERT
 TO authenticated
-WITH CHECK (member_id = auth.uid());
+WITH CHECK (
+    member_id = auth.uid()
+    OR is_officer()
+    OR (
+        auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        AND assignment_id IN (
+            SELECT id FROM assignments
+            WHERE division_id IS NULL OR division_id IN (SELECT division_id FROM auth_user_division_ids())
+        )
+    )
+);
 
 CREATE POLICY "Submissions updateable by member for self"
 ON assignment_submissions FOR UPDATE
@@ -760,10 +784,10 @@ ON audit_logs FOR SELECT
 TO authenticated
 USING (is_top_admin());
 
-CREATE POLICY "Audit logs insertable by system or authenticated users"
+CREATE POLICY "Audit logs insertable only by top admin"
 ON audit_logs FOR INSERT
 TO authenticated
-WITH CHECK (TRUE);
+WITH CHECK (is_top_admin());
 
 CREATE POLICY "No role can update audit logs"
 ON audit_logs FOR UPDATE

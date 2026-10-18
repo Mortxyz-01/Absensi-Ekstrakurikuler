@@ -32,7 +32,7 @@ interface DivisionsPageProps {
 }
 
 export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
-  const { profile } = useAuth();
+  const { profile, isMemberOnly } = useAuth();
   const [divisions, setDivisions] = useState<DivisionWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -49,6 +49,13 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
         .order('name');
 
       if (divErr) throw divErr;
+
+      // Member hanya melihat divisi yang ia ikuti (1-2 divisi)
+      let visibleDivisions = divData || [];
+      if (isMemberOnly && profile?.divisions?.length) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        visibleDivisions = visibleDivisions.filter((d: any) => myDivIds.has(d.id));
+      }
 
       // 2. Fetch all member_divisions with users & roles
       const { data: memDivData, error: mdErr } = await supabase
@@ -77,7 +84,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
         });
       });
 
-      const detailedList: DivisionWithDetails[] = (divData || []).map((d: any) => {
+      const detailedList: DivisionWithDetails[] = visibleDivisions.map((d: any) => {
         const mems = grouped[d.id] || [];
         const wajib = mems.filter((m) => m.classification === 'Wajib').length;
         const ops = mems.filter((m) => m.classification === 'Opsional').length;
@@ -108,7 +115,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
   const activeDivision = divisions.find((d) => d.id === selectedDivId) || divisions[0];
 
   if (loading) {
-    return <LoadingSpinner message="Memuat 5 divisi peminatan..." />;
+    return <LoadingSpinner message={isMemberOnly ? 'Memuat divisi kamu...' : 'Memuat 5 divisi peminatan...'} />;
   }
 
   if (error) {
@@ -116,7 +123,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* 5 Divisions Cards Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {divisions.map((d) => {
@@ -134,14 +141,14 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
                 <span className="text-xs font-bold uppercase tracking-wider text-orens-600 dark:text-orens-400 font-mono">
                   {d.code}
                 </span>
-                <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                <span className="text-[11px] font-semibold text-gray-700 dark:text-gray-200">
                   {d.membersList.length} Siswa
                 </span>
               </div>
               <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 line-clamp-1">
                 {d.name}
               </h3>
-              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+              <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1 line-clamp-2">
                 {d.description}
               </p>
             </button>
@@ -158,11 +165,11 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
                 <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">
                   Divisi {activeDivision.name}
                 </h3>
-                <span className="px-2 py-0.5 text-xs font-mono font-bold rounded-md bg-gray-100 dark:bg-dark-700 text-gray-700 dark:text-gray-300">
+                <span className="px-2 py-0.5 text-xs font-mono font-bold rounded-md bg-gray-100 dark:bg-dark-700 text-gray-700 dark:text-gray-200">
                   {activeDivision.code.toUpperCase()}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-200 mt-1">
                 {activeDivision.description}
               </p>
             </div>
@@ -172,14 +179,14 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
                 <>
                   <button
                     onClick={() => onNavigate('materials')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg transition-colors"
                   >
                     <BookOpen className="w-3.5 h-3.5 text-blue-600" />
                     <span>Materi Divisi</span>
                   </button>
                   <button
                     onClick={() => onNavigate('assignments')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg transition-colors"
                   >
                     <FileCheck2 className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Tugas Divisi</span>
@@ -192,7 +199,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
           {/* Division Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3.5 bg-gray-50 dark:bg-dark-900/50 rounded-xl border border-gray-100 dark:border-dark-700">
-              <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Total Anggota Terdaftar</span>
+              <span className="text-[11px] text-gray-700 dark:text-gray-200 font-medium">Total Anggota Terdaftar</span>
               <p className="text-xl font-extrabold text-gray-900 dark:text-gray-100 mt-0.5">
                 {activeDivision.membersList.length}
               </p>
@@ -213,7 +220,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
             </div>
 
             <div className="p-3.5 bg-gray-50 dark:bg-dark-900/50 rounded-xl border border-gray-100 dark:border-dark-700">
-              <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Status Divisi</span>
+              <span className="text-[11px] text-gray-700 dark:text-gray-200 font-medium">Status Divisi</span>
               <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span>Aktif & Beroperasi</span>
@@ -229,7 +236,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
             </h4>
 
             {activeDivision.membersList.length === 0 ? (
-              <p className="text-xs text-gray-500 dark:text-gray-400 italic py-4">
+              <p className="text-xs text-gray-700 dark:text-gray-200 italic py-4">
                 Belum ada anggota yang didaftarkan ke divisi ini.
               </p>
             ) : (
@@ -243,7 +250,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
                       <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
                         {m.full_name}
                       </p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
+                      <p className="text-[10px] text-gray-700 dark:text-gray-200 truncate max-w-[140px]">
                         {m.email}
                       </p>
                     </div>
@@ -257,7 +264,7 @@ export const DivisionsPage: React.FC<DivisionsPageProps> = ({ onNavigate }) => {
                       >
                         {m.classification}
                       </span>
-                      <span className="text-[9px] text-gray-400 font-medium">
+                      <span className="text-[9px] text-gray-600 dark:text-gray-200 font-medium">
                         {m.role_name}
                       </span>
                     </div>

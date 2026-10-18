@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import QRCode from 'qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../context/AuthContext';
 import { supabase, generateQrToken, verifyAttendance, logAudit } from '../lib/supabase';
 import {
@@ -22,12 +23,14 @@ import {
   UserPlus,
   CameraOff,
   Search,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { LoadingSpinner, EmptyState, ErrorState, AuditPromptModal } from '../components/UIState';
 import { AttendanceSession, AttendanceRecord, Division } from '../types';
 
 export const AttendancePage: React.FC = () => {
-  const { profile, role, canManageAttendance, isMemberOnly } = useAuth();
+  const { profile, role, canManageAttendance, isMemberOnly, isDivisionScoped } = useAuth();
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +45,10 @@ export const AttendancePage: React.FC = () => {
 
   // Large QR Pop-up Modal State
   const [showQrModal, setShowQrModal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [copiedBackup, setCopiedBackup] = useState(false);
   const modalCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const modalContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Create session modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -62,7 +68,6 @@ export const AttendancePage: React.FC = () => {
     id: string;
     full_name: string;
     email: string;
-    nim?: string;
     alreadyAttended: boolean;
     currentStatus?: string;
   }[]>([]);
@@ -80,10 +85,32 @@ export const AttendancePage: React.FC = () => {
   const [scanMethod, setScanMethod] = useState<'qr' | 'code'>('qr');
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [lastRecord, setLastRecord] = useState<{
+    status: string;
+    scanTime: string;
+    method: string;
+    sessionTitle: string;
+    divisionName: string;
+  } | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   // Member history state
   const [myHistory, setMyHistory] = useState<AttendanceRecord[]>([]);
+
+  // Petugas divisi (Ketua Divisi/Mentor) tak boleh membuat sesi gabungan:
+  // RLS hanya mengizinkan mereka membuat sesi untuk divisinya sendiri.
+  useEffect(() => {
+    if (isDivisionScoped && !newDivisionId && divisions.length) {
+      setNewDivisionId(divisions[0].id);
+    }
+  }, [isDivisionScoped, divisions, newDivisionId]);
+
+  // Ketua Divisi/Mentor hanya boleh mengelola sesi divisinya sendiri; sesi
+  // gabungan (tanpa divisi) ditangani Pembina/Wakil/Sekre/Ketua (RLS menolak).
+  const canManageSessionRow = (s: { division_id: string | null }) =>
+    !isDivisionScoped || !!s.division_id;
 
   // QR canvas ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -94,12 +121,32 @@ export const AttendancePage: React.FC = () => {
     setError('');
     try {
       const { data: divData } = await supabase.from('divisions').select('*').order('name');
-      setDivisions(divData || []);
+      // Member & petugas divisi hanya melihat divisi yang mereka ikuti
+      let divisionList = (divData || []) as any[];
+      if ((isMemberOnly || isDivisionScoped) && profile?.divisions?.length) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        divisionList = divisionList.filter((d: any) => myDivIds.has(d.id));
+      }
+      setDivisions(divisionList);
 
-      const { data: sessData, error: sessErr } = await supabase
-        .from('attendance_sessions')
-        .select('*, division:divisions(*)')
-        .order('created_at', { ascending: false });
+      let sessData: AttendanceSession[] | null = null;
+      let sessErr: any = null;
+
+      if (canManageAttendance) {
+        const res = await supabase
+          .from('attendance_sessions')
+          .select('*, division:divisions(*)')
+          .order('created_at', { ascending: false });
+        sessData = res.data as AttendanceSession[] | null;
+        sessErr = res.error;
+      } else {
+        const res = await supabase
+          .from('attendance_sessions')
+          .select('id, title, division_id, session_type, date, start_time, end_time, late_threshold_minutes, status, created_by, opened_at, closed_at, created_at, updated_at, division:divisions(*)')
+          .order('created_at', { ascending: false });
+        sessData = res.data as unknown as AttendanceSession[] | null;
+        sessErr = res.error;
+      }
 
       if (sessErr) throw sessErr;
       setSessions(sessData || []);
@@ -111,6 +158,10 @@ export const AttendancePage: React.FC = () => {
         openSess = (sessData || []).find(
           (s) => s.status === 'open' && (!s.division_id || myDivIds.has(s.division_id))
         );
+      } else if (isDivisionScoped) {
+        // Ketua Divisi/Mentor: sesi gabungan (tanpa divisi) tak bisa dikelola
+        // (RLS menolak tanpa pesan), jadi jangan jadikan sesi aktif.
+        openSess = (sessData || []).find((s) => s.status === 'open' && s.division_id);
       } else {
         openSess = (sessData || []).find((s) => s.status === 'open');
       }
@@ -150,7 +201,7 @@ export const AttendancePage: React.FC = () => {
         .from('attendance_records')
         .select(`
           id, session_id, member_id, status, scan_time, verification_method, notes,
-          member:users (full_name, email)
+          member:members (full_name, user:users (email))
         `)
         .eq('session_id', sessionId)
         .order('scan_time', { ascending: false });
@@ -168,7 +219,7 @@ export const AttendancePage: React.FC = () => {
           verification_method: d.verification_method,
           notes: d.notes,
           member_name: rawMem?.full_name || 'Anggota',
-          member_email: rawMem?.email || '',
+          member_email: rawMem?.user?.email || rawMem?.email || '',
         };
       });
 
@@ -207,10 +258,10 @@ export const AttendancePage: React.FC = () => {
 
       if (modalCanvasRef.current) {
         QRCode.toCanvas(modalCanvasRef.current, qrPayload, {
-          width: 380,
+          width: 400,
           margin: 2,
           color: {
-            dark: '#111827',
+            dark: '#09090b',
             light: '#ffffff',
           },
         });
@@ -271,16 +322,63 @@ export const AttendancePage: React.FC = () => {
 
       if (modalCanvasRef.current) {
         QRCode.toCanvas(modalCanvasRef.current, qrPayload, {
-          width: 380,
+          width: 400,
           margin: 2,
           color: {
-            dark: '#111827',
+            dark: '#09090b',
             light: '#ffffff',
           },
         });
       }
     }
   }, [qrToken, showQrModal, activeSession]);
+
+  // Projector Modal handlers & keyboard accessibility
+  const handleCopyBackup = async () => {
+    if (activeSession?.backup_code) {
+      try {
+        await navigator.clipboard.writeText(activeSession.backup_code);
+        setCopiedBackup(true);
+        setTimeout(() => setCopiedBackup(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy backup code:', err);
+      }
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      modalContainerRef.current?.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
+  const closeQrModal = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    setShowQrModal(false);
+  };
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  useEffect(() => {
+    if (!showQrModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeQrModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showQrModal]);
 
   // Create Session
   const handleCreateSession = async (e: React.FormEvent) => {
@@ -413,7 +511,7 @@ export const AttendancePage: React.FC = () => {
         .from('users')
         .select(`
           id, full_name, email,
-          member_record:members (nim, status)
+          member_record:members (status)
         `)
         .eq('is_active', true);
 
@@ -431,13 +529,11 @@ export const AttendancePage: React.FC = () => {
       if (uErr) throw uErr;
 
       const formatted = (usersData || []).map((u: any) => {
-        const mem = Array.isArray(u.member_record) ? u.member_record[0] : u.member_record;
         const attended = attendedMap.has(u.id);
         return {
           id: u.id,
           full_name: u.full_name || 'Tanpa Nama',
           email: u.email || '',
-          nim: mem?.nim || '',
           alreadyAttended: attended,
           currentStatus: attendedMap.get(u.id),
         };
@@ -563,9 +659,9 @@ export const AttendancePage: React.FC = () => {
   };
 
   // Member Scan / Manual Code Attendance
-  const handleMemberSubmitAttendance = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!scanInputCode.trim()) return;
+  // Verifikasi kode presensi (tempel token QR / kode cadangan, atau hasil scan kamera)
+  const runAttendanceCheck = async (rawCode: string, source: 'manual' | 'camera' = 'manual') => {
+    if (!rawCode.trim()) return;
     if (!profile) return;
 
     setScanLoading(true);
@@ -610,7 +706,7 @@ export const AttendancePage: React.FC = () => {
 
       // Check whether user pasted token or backup code
       let method: 'qr_scan' | 'backup_code' = 'qr_scan';
-      let tokenToVerify = scanInputCode.trim();
+      let tokenToVerify = rawCode.trim();
 
       // If length is ~6 and alphanumeric, likely backup code
       if (tokenToVerify.length <= 8 && !tokenToVerify.includes('{')) {
@@ -633,11 +729,24 @@ export const AttendancePage: React.FC = () => {
       );
 
       if (res.success) {
-        setScanResult({
-          success: true,
-          message: res.message || `Absensi berhasil dicatat! Status: ${res.status || 'Hadir'}.`,
-        });
+        setScanResult(null);
         setScanInputCode('');
+        setLastRecord({
+          status: res.status || 'Hadir',
+          scanTime: res.scan_time || new Date().toISOString(),
+          method:
+            method === 'backup_code'
+              ? 'Kode cadangan'
+              : source === 'camera'
+                ? 'Kamera (pindai QR)'
+                : 'Token QR',
+          sessionTitle: targetSession.title,
+          divisionName: targetSession.division_id
+            ? (targetSession.division as any)?.name ||
+              divisions.find((d: any) => d.id === targetSession!.division_id)?.name ||
+              '-'
+            : 'Umum (semua divisi)',
+        });
         fetchSessions();
       } else {
         setScanResult({
@@ -655,23 +764,93 @@ export const AttendancePage: React.FC = () => {
     }
   };
 
+  // Wrapper tombol form (tempel kode manual)
+  const handleMemberSubmitAttendance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runAttendanceCheck(scanInputCode);
+  };
+
+  // Scanner kamera in-app. API kamera (getUserMedia) hanya tersedia di secure context,
+  // yaitu HTTPS atau localhost — di plain HTTP browser tidak pernah menampilkan prompt izin.
+  useEffect(() => {
+    if (!cameraActive) return;
+    let handled = false;
+
+    const startScan = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            'API kamera tidak tersedia. Buka aplikasi lewat alamat HTTPS (https://192.168.1.11:8899), bukan http://'
+          );
+        }
+        const scanner = new Html5Qrcode('qr-reader');
+        scannerRef.current = scanner;
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: 230 },
+          (decodedText: string) => {
+            if (handled) return;
+            handled = true;
+            void (async () => {
+              try { await scanner.stop(); } catch {}
+              scannerRef.current = null;
+              setCameraActive(false);
+              await runAttendanceCheck(decodedText, 'camera');
+            })();
+          },
+          () => {}
+        );
+      } catch (err: any) {
+        setCameraError(
+          err?.message?.includes('HTTPS')
+            ? err.message
+            : 'Tidak dapat membuka kamera. Pastikan izin kamera situs ini diizinkan di browser HP, lalu coba lagi.'
+        );
+        setCameraActive(false);
+      }
+    };
+
+    void startScan();
+
+    return () => {
+      const inst = scannerRef.current;
+      scannerRef.current = null;
+      if (inst) inst.stop().catch(() => {});
+    };
+  }, [cameraActive]);
+
   const formatSeconds = (sec: number) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  const formatWaktuAbsen = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top Banner and Quick Action */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-dark-800 p-5 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-sm">
         <div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
             <QrCode className="w-5 h-5 text-orens-600" />
-            <span>Presensi Digital Orens Solution</span>
+            <span>Presensi QR Orens Solution</span>
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Token QR diperbarui otomatis setiap 5 menit dengan validasi waktu server.
+          <p className="text-xs text-gray-700 dark:text-gray-200 mt-0.5">
+            Kode QR berganti otomatis setiap 5 menit, mengikuti jam server.
           </p>
         </div>
 
@@ -694,34 +873,82 @@ export const AttendancePage: React.FC = () => {
               <Camera className="w-5 h-5 text-orens-600" />
               <span>Input Presensi Kehadiran</span>
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-xs text-gray-700 dark:text-gray-200 mb-4">
               Masukkan token QR atau kode cadangan 6 digit yang ditampilkan oleh admin di depan ruangan.
             </p>
 
             {scanResult && (
-              <div
-                className={`mb-4 p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ${
-                  scanResult.success
-                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300'
-                    : 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-300'
-                }`}
-              >
-                {scanResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-                )}
+              <div className="mb-4 p-3.5 rounded-xl border bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-300 flex items-start gap-2.5 text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
                 <span>{scanResult.message}</span>
               </div>
             )}
 
+            {lastRecord ? (
+              <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 p-5">
+                <div className="flex items-start gap-3 mb-4">
+                  <span className="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-6 h-6 text-white" />
+                  </span>
+                  <div>
+                    <p className="text-base font-bold text-emerald-900 dark:text-emerald-200">
+                      Presensi Berhasil Tercatat
+                    </p>
+                    <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-0.5">
+                      Kehadiran {profile?.full_name || 'kamu'} sudah masuk ke rapor divisi.
+                    </p>
+                  </div>
+                </div>
+
+                <dl className="rounded-xl bg-white dark:bg-dark-900 border border-emerald-200 dark:border-emerald-900/40 divide-y divide-gray-100 dark:divide-dark-700 text-xs">
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-gray-700 dark:text-gray-200">Status kehadiran</dt>
+                    <dd>
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                          lastRecord.status === 'Hadir'
+                            ? 'bg-emerald-100 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300'
+                        }`}
+                      >
+                        {lastRecord.status}
+                      </span>
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-gray-700 dark:text-gray-200 shrink-0">Waktu absen</dt>
+                    <dd className="text-right font-medium text-gray-900 dark:text-gray-100">{formatWaktuAbsen(lastRecord.scanTime)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-gray-700 dark:text-gray-200 shrink-0">Sesi</dt>
+                    <dd className="text-right font-medium text-gray-900 dark:text-gray-100">{lastRecord.sessionTitle}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-gray-700 dark:text-gray-200 shrink-0">Divisi</dt>
+                    <dd className="text-right font-medium text-gray-900 dark:text-gray-100">{lastRecord.divisionName}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <dt className="text-gray-700 dark:text-gray-200 shrink-0">Metode presensi</dt>
+                    <dd className="text-right font-medium text-gray-900 dark:text-gray-100">{lastRecord.method}</dd>
+                  </div>
+                </dl>
+
+                <button
+                  type="button"
+                  onClick={() => setLastRecord(null)}
+                  className="mt-4 w-full min-h-[44px] rounded-xl text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 transition-colors"
+                >
+                  Selesai, Kembali ke Menu Presensi
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleMemberSubmitAttendance} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Kode Cadangan Sesi / Token QR
                 </label>
                 <div className="relative">
-                  <KeyRound className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+                  <KeyRound className="w-4 h-4 absolute left-3 top-3 text-gray-600 dark:text-gray-200" />
                   <input
                     type="text"
                     value={scanInputCode}
@@ -731,13 +958,48 @@ export const AttendancePage: React.FC = () => {
                     required
                   />
                 </div>
-                <div className="mt-2.5 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                {/* Scanner kamera in-app */}
+              <div className="mt-3">
+                {!cameraActive && (
+                  <button
+                    type="button"
+                    onClick={() => { setCameraError(''); setCameraActive(true); }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 min-h-[44px] rounded-xl text-xs font-bold text-orens-700 bg-orens-50 dark:bg-orens-500/10 border border-orens-200 dark:border-orens-500/30 hover:bg-orens-100 dark:hover:bg-orens-500/20 active:bg-orens-200 transition-colors"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Pindai QR dengan Kamera HP</span>
+                  </button>
+                )}
+                {cameraActive && (
+                  <div className="space-y-2">
+                    <div id="qr-reader" className="w-full rounded-xl overflow-hidden border border-gray-300 dark:border-dark-600" />
+                    <p className="text-[11px] text-gray-700 dark:text-gray-200 text-center">
+                      Arahkan QR dari layar pembina ke kamera. Pertama kali browser akan menanyakan izin kamera: pilih <strong className="text-gray-900 dark:text-gray-100">Izinkan / Allow</strong>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCameraActive(false)}
+                      className="w-full py-2 min-h-[44px] rounded-xl text-xs font-bold text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-dark-700 border border-gray-200 dark:border-dark-600 active:bg-gray-200 dark:active:bg-dark-600 transition-colors"
+                    >
+                      Tutup Kamera
+                    </button>
+                  </div>
+                )}
+                {cameraError && (
+                  <div className="mt-2 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl flex items-start gap-2.5 text-xs text-red-800 dark:text-red-300">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
                   <CameraOff className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
                   <div className="space-y-0.5">
-                    <p className="font-bold">Kamera HP Bermasalah atau Tidak Bisa Scan?</p>
+                    <p className="font-bold">Kamera Bermasalah, atau Scan Gagal?</p>
                     <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                      Ketik <strong>6 karakter Kode Cadangan</strong> dari layar proyektor / mentor ke kolom di atas. Bila HP mati total, minta pembina divisi untuk mencatat kehadiran lewat <strong>Input Presensi Manual</strong>.
-                    </p>
+                     Ketik <strong>6 karakter Kode Cadangan</strong> dari layar pembina ke kolom di atas. Ini jalur darurat yang selalu bisa dipakai walau kamera/koneksi bermasalah.
+                  </p>
                   </div>
                 </div>
               </div>
@@ -750,6 +1012,7 @@ export const AttendancePage: React.FC = () => {
                 {scanLoading ? 'Memproses Kehadiran...' : 'Kirim Presensi Sekarang'}
               </button>
             </form>
+            )}
           </div>
 
           {/* Member Personal Attendance Log */}
@@ -760,7 +1023,7 @@ export const AttendancePage: React.FC = () => {
             </h3>
 
             {myHistory.length === 0 ? (
-              <p className="text-xs text-gray-500 dark:text-gray-400 italic py-6 text-center">
+              <p className="text-xs text-gray-700 dark:text-gray-200 italic py-6 text-center">
                 Belum ada rekaman presensi.
               </p>
             ) : (
@@ -774,7 +1037,7 @@ export const AttendancePage: React.FC = () => {
                       <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
                         {rec.session?.title || 'Sesi Ekstrakurikuler'}
                       </p>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                      <p className="text-[10px] text-gray-700 dark:text-gray-200">
                         Tanggal: {rec.session?.date} • Waktu: {rec.scan_time ? new Date(rec.scan_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'} WIB
                       </p>
                     </div>
@@ -835,10 +1098,10 @@ export const AttendancePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowQrModal(true)}
-                className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 transition-colors shadow-sm shadow-orens-600/20"
+                className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-semibold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 transition-colors shadow-sm"
               >
                 <Maximize2 className="w-4 h-4" />
-                <span>Perbesar QR (Pop-up Proyektor)</span>
+                <span>Buka Mode Proyektor</span>
               </button>
             </div>
 
@@ -847,15 +1110,15 @@ export const AttendancePage: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-dark-700">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                      Sesi Dibuka & Siap Dipindai
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                      Sesi Dibuka • Siap Dipindai
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-1">
                     {activeSession.title}
                   </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <p className="text-xs text-gray-700 dark:text-gray-200">
                     Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kategori: {activeSession.activity_type} • Batas Telat: {activeSession.late_threshold_minutes} menit
                   </p>
                 </div>
@@ -863,17 +1126,17 @@ export const AttendancePage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setShowQrModal(true)}
-                    title="Buka QR dalam Modal Pop-up Layar Penuh"
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 hover:bg-orens-100 dark:hover:bg-orens-900/60 rounded-xl border border-orens-200 dark:border-orens-800/40 transition-colors shadow-sm"
+                    title="Buka QR dalam Mode Proyektor"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 hover:bg-orens-100 dark:hover:bg-orens-900/60 rounded-xl border border-orens-200 dark:border-orens-800/40 transition-colors shadow-sm"
                   >
                     <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Mode Pop-up QR</span>
+                    <span>Mode Proyektor</span>
                   </button>
 
                   <button
                     onClick={() => refreshQrToken(activeSession.id)}
                     title="Segarkan Token QR Server Sekarang"
-                    className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700 rounded-lg border border-gray-200 dark:border-dark-600"
+                    className="p-2 text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700 rounded-lg border border-gray-200 dark:border-dark-600"
                   >
                     <RotateCw className="w-4 h-4" />
                   </button>
@@ -891,19 +1154,19 @@ export const AttendancePage: React.FC = () => {
               {/* Live Attendee Stats */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="p-3 bg-gray-50 dark:bg-dark-900/50 rounded-xl border border-gray-100 dark:border-dark-700">
-                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Total Hadir</span>
+                  <span className="text-[11px] text-gray-700 dark:text-gray-200">Total Hadir</span>
                   <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                     {attendees.filter((a) => a.status === 'Hadir').length}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-dark-900/50 rounded-xl border border-gray-100 dark:border-dark-700">
-                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Terlambat</span>
+                  <span className="text-[11px] text-gray-700 dark:text-gray-200">Terlambat</span>
                   <p className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">
                     {attendees.filter((a) => a.status === 'Terlambat').length}
                   </p>
                 </div>
                 <div className="p-3 bg-gray-50 dark:bg-dark-900/50 rounded-xl border border-gray-100 dark:border-dark-700">
-                  <span className="text-[11px] text-gray-500 dark:text-gray-400">Total Tercatat</span>
+                  <span className="text-[11px] text-gray-700 dark:text-gray-200">Total Tercatat</span>
                   <p className="text-xl font-bold text-orens-600 dark:text-orens-400 mt-0.5">
                     {attendees.length}
                   </p>
@@ -913,7 +1176,7 @@ export const AttendancePage: React.FC = () => {
               {/* Attendee Live Table */}
               <div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200">
                     Daftar Peserta Hadir (Pembaruan Otomatis):
                   </h4>
                   <button
@@ -927,7 +1190,7 @@ export const AttendancePage: React.FC = () => {
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                   {attendees.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic py-4 text-center">
+                    <p className="text-xs text-gray-600 dark:text-gray-200 italic py-4 text-center">
                       Belum ada siswa yang memindai QR atau dicatat manual pada sesi ini.
                     </p>
                   ) : (
@@ -955,7 +1218,7 @@ export const AttendancePage: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[10px] text-gray-600 dark:text-gray-200">
                             {att.scan_time ? new Date(att.scan_time).toLocaleTimeString('id-ID') : '-'}
                           </span>
                         </div>
@@ -985,7 +1248,7 @@ export const AttendancePage: React.FC = () => {
             <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">
               Riwayat dan Jadwal Sesi Presensi
             </h3>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
+            <span className="text-xs text-gray-700 dark:text-gray-200">
               {sessions.length} Sesi Terdaftar
             </span>
           </div>
@@ -1000,9 +1263,10 @@ export const AttendancePage: React.FC = () => {
               onAction={() => setShowCreateModal(true)}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
-                <thead className="bg-gray-50 dark:bg-dark-900/50 text-[11px] uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-dark-700">
+            <>
+              <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-200">
+                <thead className="bg-gray-50 dark:bg-dark-900/50 text-[11px] uppercase tracking-wider font-bold text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-dark-700">
                   <tr>
                     <th className="py-3 px-4">Judul Sesi</th>
                     <th className="py-3 px-4">Divisi & Kategori</th>
@@ -1030,7 +1294,7 @@ export const AttendancePage: React.FC = () => {
                           {sess.activity_type}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-gray-500 dark:text-gray-400">
+                      <td className="py-3 px-4 text-xs text-gray-700 dark:text-gray-200">
                         <div>{sess.date}</div>
                         <div>{sess.start_time} - {sess.end_time}</div>
                       </td>
@@ -1043,7 +1307,7 @@ export const AttendancePage: React.FC = () => {
                             sess.status === 'open'
                               ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                               : sess.status === 'closed'
-                              ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+                              ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
                               : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                           }`}
                         >
@@ -1051,7 +1315,7 @@ export const AttendancePage: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {(sess.status === 'scheduled' || sess.status === 'draft') && (
+                        {(sess.status === 'scheduled' || sess.status === 'draft') && canManageSessionRow(sess) && (
                           <button
                             onClick={() => handleOpenSession(sess)}
                             className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm"
@@ -1060,7 +1324,10 @@ export const AttendancePage: React.FC = () => {
                             <span>Buka Sesi</span>
                           </button>
                         )}
-                        {sess.status === 'open' && (
+                        {(sess.status === 'scheduled' || sess.status === 'draft') && !canManageSessionRow(sess) && (
+                          <span className="text-[10px] italic text-gray-600 dark:text-gray-300">Gabungan (Pengurus)</span>
+                        )}
+                        {sess.status === 'open' && canManageSessionRow(sess) && (
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => openManualAttendanceModal(sess)}
@@ -1075,11 +1342,11 @@ export const AttendancePage: React.FC = () => {
                                 setActiveSession(sess);
                                 setShowQrModal(true);
                               }}
-                              title="Perbesar QR untuk Proyektor"
+                              title="Buka QR dalam Mode Proyektor"
                               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 border border-orens-200 dark:border-orens-800 rounded-lg shadow-sm hover:bg-orens-100"
                             >
                               <Maximize2 className="w-3 h-3" />
-                              <span>Pop-up QR</span>
+                              <span>Mode Proyektor</span>
                             </button>
                             <button
                               onClick={() => handleCloseSession(sess)}
@@ -1090,8 +1357,11 @@ export const AttendancePage: React.FC = () => {
                             </button>
                           </div>
                         )}
+                        {sess.status === 'open' && !canManageSessionRow(sess) && (
+                          <span className="text-[10px] italic text-gray-600 dark:text-gray-300">Gabungan (Pengurus)</span>
+                        )}
                         {sess.status === 'closed' && (
-                          <span className="text-xs text-gray-400 italic">Selesai</span>
+                          <span className="text-xs text-gray-600 dark:text-gray-200 italic">Selesai</span>
                         )}
                       </td>
                     </tr>
@@ -1099,13 +1369,105 @@ export const AttendancePage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile: kartu sesi bertumpuk, menggantikan tabel */}
+            <ul className="md:hidden divide-y divide-gray-100 dark:divide-dark-700">
+              {sessions.map((sess) => (
+                <li key={sess.id} className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                        {sess.title}
+                      </p>
+                      <p className="text-xs text-gray-700 dark:text-gray-200 mt-0.5">
+                        {sess.division?.name || 'Semua Divisi'} • {sess.date} • {sess.start_time} - {sess.end_time}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        sess.status === 'open'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : sess.status === 'closed'
+                          ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
+                          : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                      }`}
+                    >
+                      {sess.status === 'open' ? 'Buka' : sess.status === 'closed' ? 'Ditutup' : 'Terjadwal'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        sess.activity_type === 'Wajib'
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                          : 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                      }`}
+                    >
+                      {sess.activity_type}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-orens-600 dark:text-orens-400 bg-gray-50 dark:bg-dark-900/60 border border-gray-200 dark:border-dark-700 px-2 py-0.5 rounded">
+                      Kode: {sess.backup_code}
+                    </span>
+                  </div>
+
+                  {canManageSessionRow(sess) && (sess.status === 'scheduled' || sess.status === 'draft' || sess.status === 'open') && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-dark-700">
+                      {(sess.status === 'scheduled' || sess.status === 'draft') && (
+                        <button
+                          onClick={() => handleOpenSession(sess)}
+                          className="inline-flex items-center gap-1 px-3 py-2.5 min-h-[44px] text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Buka Sesi</span>
+                        </button>
+                      )}
+                      {sess.status === 'open' && (
+                        <>
+                          <button
+                            onClick={() => openManualAttendanceModal(sess)}
+                            title="Input presensi manual untuk siswa berkendala kamera"
+                            className="inline-flex items-center gap-1 px-3 py-2.5 min-h-[44px] text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-600 transition-colors"
+                          >
+                            <UserPlus className="w-3.5 h-3.5 text-orens-600 dark:text-orens-400" />
+                            <span>Manual</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveSession(sess);
+                              setShowQrModal(true);
+                            }}
+                            title="Buka QR dalam Mode Proyektor"
+                            className="inline-flex items-center gap-1 px-3 py-2.5 min-h-[44px] text-xs font-semibold text-orens-700 dark:text-orens-300 bg-orens-50 dark:bg-orens-950/40 border border-orens-200 dark:border-orens-800 rounded-lg shadow-sm hover:bg-orens-100"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            <span>Mode Proyektor</span>
+                          </button>
+                          <button
+                            onClick={() => handleCloseSession(sess)}
+                            className="inline-flex items-center gap-1 px-3 py-2.5 min-h-[44px] text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm"
+                          >
+                            <Square className="w-3.5 h-3.5" />
+                            <span>Tutup</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {!canManageSessionRow(sess) && (sess.status === 'scheduled' || sess.status === 'draft' || sess.status === 'open') && (
+                    <p className="text-[11px] italic text-gray-600 dark:text-gray-300 mt-3 text-right">Gabungan: dikelola Pembina/Wakil/Sekre/Ketua</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+            </>
           )}
         </div>
       )}
 
       {/* CREATE SESSION MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-gray-100">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
               <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
@@ -1113,7 +1475,7 @@ export const AttendancePage: React.FC = () => {
               </h3>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                className="text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1121,7 +1483,7 @@ export const AttendancePage: React.FC = () => {
 
             <form onSubmit={handleCreateSession} className="space-y-3.5 my-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Judul Pertemuan:
                 </label>
                 <input
@@ -1135,15 +1497,15 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Divisi Khusus (Opsional):
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  {isDivisionScoped ? 'Divisi Sesi:' : 'Divisi Khusus (Opsional):'}
                 </label>
                 <select
                   value={newDivisionId}
                   onChange={(e) => setNewDivisionId(e.target.value)}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
                 >
-                  <option value="">Semua Divisi (Pertemuan Gabungan)</option>
+                  <option value="">{isDivisionScoped ? 'Wajib pilih divisi' : 'Semua Divisi (Pertemuan Gabungan)'}</option>
                   {divisions.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.name}
@@ -1154,7 +1516,7 @@ export const AttendancePage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Klasifikasi:
                   </label>
                   <select
@@ -1168,7 +1530,7 @@ export const AttendancePage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Toleransi Telat (Menit):
                   </label>
                   <input
@@ -1185,7 +1547,7 @@ export const AttendancePage: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Tanggal:
                   </label>
                   <input
@@ -1197,7 +1559,7 @@ export const AttendancePage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Mulai:
                   </label>
                   <input
@@ -1209,7 +1571,7 @@ export const AttendancePage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Selesai:
                   </label>
                   <input
@@ -1226,7 +1588,7 @@ export const AttendancePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
+                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
                 >
                   Batal
                 </button>
@@ -1243,97 +1605,156 @@ export const AttendancePage: React.FC = () => {
         </div>
       )}
 
-      {/* POP-UP MODAL QR CODE: ULTRA-LARGE & HIGH-CONTRAST FOR PROJECTOR */}
+      {/* POP-UP MODAL QR CODE: CLEAN, HIGH-CONTRAST FOR PROJECTOR */}
       {showQrModal && activeSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-md animate-in fade-in">
-          <div className="bg-dark-900 border-2 border-orens-500/60 rounded-3xl max-w-xl w-full p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center relative text-white space-y-5">
-            {/* Top Close Button */}
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+        <div
+          ref={modalContainerRef}
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-gray-900/70 p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mode Proyektor Presensi QR"
+        >
+          <div
+            className={`w-full bg-white text-gray-900 shadow-2xl flex flex-col ${
+              isFullscreen
+                ? 'max-w-3xl rounded-2xl p-6 sm:p-10 my-auto'
+                : 'max-w-xl rounded-2xl p-5 sm:p-7'
+            }`}
+          >
+            {/* Controls */}
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Presensi QR
+              </span>
 
-            {/* Header info */}
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Mode Proyektor • Sesi Dibuka</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Keluar Layar Penuh' : 'Layar Penuh (F11 / Proyektor)'}
+                  className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label={isFullscreen ? 'Keluar Layar Penuh' : 'Mode Layar Penuh'}
+                >
+                  {isFullscreen ? (
+                    <Minimize2 className="w-4 h-4" />
+                  ) : (
+                    <Maximize2 className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeQrModal}
+                  title="Tutup (Esc)"
+                  className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label="Tutup jendela presensi"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            </div>
+
+            {/* Session Title & Metadata */}
+            <div className="mt-3">
+              <h2
+                className={`font-bold tracking-tight text-gray-900 ${
+                  isFullscreen ? 'text-2xl sm:text-4xl' : 'text-xl sm:text-2xl'
+                }`}
+              >
                 {activeSession.title}
               </h2>
-              <p className="text-xs sm:text-sm text-gray-400 mt-1">
-                Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kategori: {activeSession.activity_type}
+              <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                {activeSession.division?.name || 'Semua Divisi'} &middot; {activeSession.activity_type}
+                {activeSession.late_threshold_minutes
+                  ? ` &middot; telat lebih dari ${activeSession.late_threshold_minutes} menit dicatat Terlambat`
+                  : ''}
               </p>
             </div>
 
-            {/* QR Canvas Display */}
-            <div className="relative p-3 bg-white rounded-2xl shadow-2xl shadow-orens-500/20">
-              <canvas ref={modalCanvasRef} className="rounded-xl w-[260px] h-[260px] sm:w-[360px] sm:h-[360px]" />
-            </div>
-
-            {/* Live Countdown Progress Bar */}
-            <div className="w-full max-w-md space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-gray-300">
-                <span className="flex items-center gap-1.5 text-orens-400">
-                  <Clock className="w-4 h-4 animate-spin" />
-                  <span>Pembaruan Token Otomatis:</span>
-                </span>
-                <span className="font-mono text-base text-white font-extrabold">
-                  {formatSeconds(secondsLeft)}
-                </span>
-              </div>
-              <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-orens-500 h-2.5 transition-all duration-1000 rounded-full"
-                  style={{ width: `${(secondsLeft / 300) * 100}%` }}
+            {/* QR Code */}
+            <div className="flex flex-col items-center py-5 sm:py-7">
+              <div className="p-3.5 sm:p-4 bg-white rounded-xl border border-gray-200">
+                <canvas
+                  ref={modalCanvasRef}
+                  className="w-[230px] h-[230px] sm:w-[300px] sm:h-[300px] md:w-[340px] md:h-[340px] block"
                 />
               </div>
+              <p className={`text-gray-600 mt-3 ${isFullscreen ? 'text-base' : 'text-sm'}`}>
+                Pindai dengan kamera HP siswa
+              </p>
             </div>
 
-            {/* Large Backup Code Display */}
-            <div className="w-full max-w-md p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
-              <div className="text-left">
-                <span className="text-[11px] uppercase tracking-wider font-semibold text-gray-400">
-                  Kode Cadangan Manual:
+            {/* Countdown & Backup Code */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3.5 flex flex-col">
+                <span className="text-[11px] text-gray-600">Kode QR berganti dalam</span>
+                <span className="text-2xl font-mono font-bold text-orens-600 mt-0.5">
+                  {formatSeconds(secondsLeft)}
                 </span>
-                <p className="text-xs text-gray-400">Gunakan bila kamera HP terkendala</p>
+                <div className="w-full bg-gray-200 h-1 rounded-full overflow-hidden mt-2">
+                  <div
+                    className="bg-orens-500 h-full transition-all duration-1000 ease-linear rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(0, (secondsLeft / 300) * 100))}%` }}
+                  />
+                </div>
               </div>
-              <span className="font-mono text-2xl font-black tracking-widest text-amber-400 bg-black/40 px-3 py-1 rounded-xl border border-amber-400/30">
-                {activeSession.backup_code}
-              </span>
+
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3.5">
+                <span className="text-[11px] text-gray-600">
+                  Kamera kendala? Masukkan kode ini di aplikasi
+                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-2xl font-bold tracking-widest text-gray-900 select-all">
+                    {activeSession.backup_code}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyBackup}
+                    title="Salin kode cadangan"
+                    className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                    aria-label="Salin kode cadangan"
+                  >
+                    {copiedBackup ? (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Live attendee counters & action buttons */}
-            <div className="w-full max-w-md flex flex-col sm:flex-row items-center justify-between pt-2 border-t border-white/10 text-xs gap-3">
-              <div className="text-gray-400 text-center sm:text-left">
-                Peserta Hadir: <strong className="text-emerald-400">{attendees.length} Siswa</strong>
-              </div>
-              <div className="flex items-center gap-2">
+            {/* Footer: Attendee Count & Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-200">
+              <span className="text-sm text-gray-600">
+                Hadir: <strong className="text-emerald-600">{attendees.length}</strong> siswa
+              </span>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
+                  type="button"
                   onClick={() => {
-                    setShowQrModal(false);
+                    closeQrModal();
                     openManualAttendanceModal(activeSession);
                   }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-orens-500/20 hover:bg-orens-500/30 text-orens-300 border border-orens-500/40 transition-colors font-medium"
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors flex items-center gap-1.5"
                 >
-                  <UserPlus className="w-3.5 h-3.5" />
+                  <UserPlus className="w-3.5 h-3.5 text-gray-500" />
                   <span>Input Manual</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => refreshQrToken(activeSession.id)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 transition-colors font-medium"
+                  className="px-3 py-2 rounded-lg text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:bg-gray-100 transition-colors flex items-center gap-1.5"
                 >
-                  <RotateCw className="w-3.5 h-3.5" />
+                  <RotateCw className="w-3.5 h-3.5 text-gray-500" />
                   <span>Segarkan</span>
                 </button>
                 <button
-                  onClick={() => setShowQrModal(false)}
-                  className="px-4 py-1.5 rounded-xl bg-orens-600 hover:bg-orens-700 text-white font-bold transition-colors shadow-sm"
+                  type="button"
+                  onClick={closeQrModal}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 transition-colors"
                 >
-                  Tutup Pop-up
+                  Selesai
                 </button>
               </div>
             </div>
@@ -1343,7 +1764,7 @@ export const AttendancePage: React.FC = () => {
 
       {/* MODAL INPUT PRESENSI MANUAL SISWA (KENDALA KAMERA / PERANGKAT) */}
       {showManualModal && targetSessionForManual && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 max-w-lg w-full p-6 shadow-2xl relative text-gray-900 dark:text-gray-100 space-y-4 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-gray-100 dark:border-dark-700 pb-3">
@@ -1352,13 +1773,13 @@ export const AttendancePage: React.FC = () => {
                   <UserPlus className="w-5 h-5 text-orens-600 dark:text-orens-400" />
                   <span>Input Presensi Manual Siswa</span>
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-700 dark:text-gray-200 mt-0.5">
                   Solusi resmi bila kamera HP siswa rusak, izin ditolak, atau kendala perangkat.
                 </p>
               </div>
               <button
                 onClick={() => setShowManualModal(false)}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700 transition-colors"
+                className="p-1.5 rounded-lg text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1374,7 +1795,7 @@ export const AttendancePage: React.FC = () => {
                   Sesi {targetSessionForManual.status === 'open' ? 'Buka' : 'Terpilih'}
                 </span>
               </div>
-              <div className="text-[11px] text-gray-500 dark:text-gray-400">
+              <div className="text-[11px] text-gray-700 dark:text-gray-200">
                 Divisi: <strong>{targetSessionForManual.division?.name || 'Semua Divisi'}</strong> • Kategori: <strong>{targetSessionForManual.activity_type}</strong>
               </div>
             </div>
@@ -1397,24 +1818,24 @@ export const AttendancePage: React.FC = () => {
             <div className="space-y-4 text-xs">
               {/* Student Picker */}
               <div>
-                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block font-bold text-gray-700 dark:text-gray-200 mb-1">
                   Pilih Siswa / Anggota
                 </label>
 
                 {manualLoadingStudents ? (
-                  <div className="py-4 text-center text-xs text-gray-400">
+                  <div className="py-4 text-center text-xs text-gray-600 dark:text-gray-200">
                     Memuat daftar siswa divisi...
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {/* Search filter for students */}
                     <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-400" />
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-600 dark:text-gray-200" />
                       <input
                         type="text"
                         value={manualSearchQuery}
                         onChange={(e) => setManualSearchQuery(e.target.value)}
-                        placeholder="Cari nama atau NIM siswa..."
+                        placeholder="Cari nama siswa..."
                         className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-gray-300 dark:border-dark-600 bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
                       />
                     </div>
@@ -1431,18 +1852,17 @@ export const AttendancePage: React.FC = () => {
                           return (
                             !q ||
                             s.full_name.toLowerCase().includes(q) ||
-                            (s.nim && s.nim.toLowerCase().includes(q)) ||
                             s.email.toLowerCase().includes(q)
                           );
                         })
                         .map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.full_name} {s.nim ? `(${s.nim})` : ''} - {s.alreadyAttended ? `[Sudah: ${s.currentStatus || 'Hadir'}]` : '[Belum Presensi]'}
+                            {s.full_name} - {s.alreadyAttended ? `[Sudah: ${s.currentStatus || 'Hadir'}]` : '[Belum Presensi]'}
                           </option>
                         ))}
                     </select>
 
-                    <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                    <div className="flex items-center justify-between text-[11px] text-gray-700 dark:text-gray-200">
                       <span>Total Siswa Divisi: <strong>{manualStudentList.length}</strong></span>
                       <span>Belum Hadir: <strong className="text-amber-600 dark:text-amber-400">{manualStudentList.filter(s => !s.alreadyAttended).length}</strong></span>
                     </div>
@@ -1452,7 +1872,7 @@ export const AttendancePage: React.FC = () => {
 
               {/* Attendance Status Picker */}
               <div>
-                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label className="block font-bold text-gray-700 dark:text-gray-200 mb-1.5">
                   Status Kehadiran
                 </label>
                 <div className="grid grid-cols-4 gap-2">
@@ -1470,7 +1890,7 @@ export const AttendancePage: React.FC = () => {
                             : st === 'Izin'
                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                             : 'bg-purple-600 text-white border-purple-600 shadow-sm'
-                          : 'bg-gray-50 dark:bg-dark-900 border-gray-200 dark:border-dark-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700'
+                          : 'bg-gray-50 dark:bg-dark-900 border-gray-200 dark:border-dark-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700'
                       }`}
                     >
                       {st}
@@ -1481,7 +1901,7 @@ export const AttendancePage: React.FC = () => {
 
               {/* Quick Preset Reasons */}
               <div>
-                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                <label className="block font-bold text-gray-700 dark:text-gray-200 mb-1.5">
                   Alasan Cepat (Kendala Kamera / Perangkat)
                 </label>
                 <div className="flex flex-wrap gap-1.5">
@@ -1499,7 +1919,7 @@ export const AttendancePage: React.FC = () => {
                       className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
                         manualNote === preset
                           ? 'bg-orens-100 dark:bg-orens-950/60 text-orens-800 dark:text-orens-300 border-orens-400 dark:border-orens-700 font-bold'
-                          : 'bg-gray-100 dark:bg-dark-700/60 text-gray-600 dark:text-gray-300 border-transparent hover:bg-gray-200 dark:hover:bg-dark-700'
+                          : 'bg-gray-100 dark:bg-dark-700/60 text-gray-600 dark:text-gray-200 border-transparent hover:bg-gray-200 dark:hover:bg-dark-700'
                       }`}
                     >
                       {preset}
@@ -1510,7 +1930,7 @@ export const AttendancePage: React.FC = () => {
 
               {/* Detailed Reason / Notes Input */}
               <div>
-                <label className="block font-bold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block font-bold text-gray-700 dark:text-gray-200 mb-1">
                   Catatan / Keterangan Pembina
                 </label>
                 <input
@@ -1520,7 +1940,7 @@ export const AttendancePage: React.FC = () => {
                   placeholder="Tuliskan keterangan detail kendala siswa..."
                   className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
                 />
-                <p className="text-[10px] text-gray-400 mt-1">
+                <p className="text-[10px] text-gray-600 dark:text-gray-200 mt-1">
                   Keterangan ini dicatat ke log audit dengan metode verifikasi <code>manual_correction</code>.
                 </p>
               </div>
@@ -1531,7 +1951,7 @@ export const AttendancePage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowManualModal(false)}
-                className="px-3.5 py-2 rounded-xl text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-700 font-medium transition-colors"
+                className="px-3.5 py-2 rounded-xl text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-700 font-medium transition-colors"
               >
                 Tutup
               </button>

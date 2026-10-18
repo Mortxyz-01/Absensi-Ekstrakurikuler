@@ -16,21 +16,19 @@ import {
   Moon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface MobileNavProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  isDark: boolean;
-  toggleTheme: () => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
   currentTab,
   setCurrentTab,
-  isDark,
-  toggleTheme,
 }) => {
-  const { profile, role, logout, canManageMembers, isTopAdmin } = useAuth();
+  const { profile, role, logout, canManageMembers, isTopAdmin, canViewReports, canViewDivisions } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const mainTabs = [
@@ -42,9 +40,9 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
   const extraTabs = [
     { id: 'members', label: 'Anggota', icon: Users, show: canManageMembers },
-    { id: 'divisions', label: 'Divisi', icon: Layers, show: true },
+    { id: 'divisions', label: 'Divisi', icon: Layers, show: canViewDivisions },
     { id: 'grades', label: 'Nilai & Rapor', icon: GraduationCap, show: true },
-    { id: 'reports', label: 'Laporan', icon: FileSpreadsheet, show: !profile?.role?.name || profile.role.name !== 'Member' },
+    { id: 'reports', label: 'Laporan', icon: FileSpreadsheet, show: canViewReports },
     { id: 'audit', label: 'Log Audit', icon: ShieldAlert, show: isTopAdmin },
   ];
 
@@ -62,7 +60,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100">
               Orens Solution
             </h1>
-            <p className="text-[10px] text-gray-500 dark:text-gray-400">
+            <p className="text-[10px] text-gray-700 dark:text-gray-200">
               {role || 'Ekstrakurikuler'}
             </p>
           </div>
@@ -70,7 +68,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
         <button
           onClick={() => setDrawerOpen(true)}
-          className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="p-2 text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
           aria-label="Buka Menu"
         >
           <Menu className="w-6 h-6" />
@@ -78,7 +76,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
       </div>
 
       {/* Bottom Sticky Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-dark-900/95 backdrop-blur-md border-t border-gray-200 dark:border-dark-700 px-2 py-1 flex justify-around items-center">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-dark-900/95 backdrop-blur-md border-t border-gray-200 dark:border-dark-700 px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] flex justify-around items-center">
         {mainTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
@@ -89,7 +87,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               className={`flex flex-col items-center justify-center min-w-[44px] min-h-[48px] px-2 py-1 rounded-lg transition-colors ${
                 isActive
                   ? 'text-orens-600 dark:text-orens-500 font-bold'
-                  : 'text-gray-500 dark:text-gray-400 font-medium'
+                  : 'text-gray-700 dark:text-gray-200 font-medium'
               }`}
             >
               <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : ''}`} />
@@ -106,7 +104,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             className="fixed inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setDrawerOpen(false)}
           />
-          <div className="relative ml-auto w-72 max-w-[80%] bg-white dark:bg-dark-900 h-full p-5 shadow-2xl flex flex-col justify-between z-10">
+          <div className="relative ml-auto w-72 max-w-[80%] bg-white dark:bg-dark-900 h-full p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl flex flex-col justify-between z-10 overflow-y-auto">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-gray-200 dark:border-dark-700">
                 <div className="flex items-center gap-2">
@@ -119,14 +117,14 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 </div>
                 <button
                   onClick={() => setDrawerOpen(false)}
-                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  className="p-1 text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="py-3">
-                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Akun</p>
+                <p className="text-xs text-gray-700 dark:text-gray-200 font-medium mb-1">Akun</p>
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
                   {profile?.full_name}
                 </p>
@@ -151,7 +149,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm min-h-[44px] font-medium transition-colors ${
                           isActive
                             ? 'bg-orens-600 text-white'
-                            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-800'
+                            : 'text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-800'
                         }`}
                       >
                         <Icon className="w-5 h-5" />
@@ -165,13 +163,13 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             <div className="pt-4 border-t border-gray-200 dark:border-dark-700 space-y-2">
               <button
                 onClick={toggleTheme}
-                className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-dark-800 rounded-lg min-h-[44px]"
+                className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-600 dark:text-gray-200 bg-gray-50 dark:bg-dark-800 rounded-lg min-h-[44px]"
               >
                 <span className="flex items-center gap-2">
                   {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}
                   <span>Mode {isDark ? 'Terang' : 'Gelap'}</span>
                 </span>
-                <span className="text-xs text-gray-400">{isDark ? 'Dark' : 'Light'}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-200">{isDark ? 'Dark' : 'Light'}</span>
               </button>
 
               <button

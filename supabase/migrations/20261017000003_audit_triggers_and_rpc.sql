@@ -258,19 +258,34 @@ RETURNS JSONB AS $$
 DECLARE
     v_token TEXT;
     v_expires_at TIMESTAMPTZ;
-    v_session_status TEXT;
+    v_session attendance_sessions%ROWTYPE;
 BEGIN
-    -- Check session status
-    SELECT status INTO v_session_status
+    -- VibeSec Check: Caller must be authenticated
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Autentikasi diperlukan untuk membuat token QR.';
+    END IF;
+
+    -- Fetch session details
+    SELECT * INTO v_session
     FROM attendance_sessions
     WHERE id = p_session_id;
 
-    IF v_session_status IS NULL THEN
-        RAISE EXCEPTION 'Session not found';
+    IF v_session.id IS NULL THEN
+        RAISE EXCEPTION 'Sesi absensi tidak ditemukan.';
     END IF;
 
-    IF v_session_status != 'open' THEN
-        RAISE EXCEPTION 'Cannot generate QR token for non-open session (current status: %)', v_session_status;
+    -- VibeSec Check: Only officers or assigned division leads/mentors can generate QR tokens
+    IF NOT (
+        is_officer() OR (
+            auth_user_role() IN ('Ketua Divisi', 'Mentor')
+            AND (v_session.division_id IS NULL OR v_session.division_id IN (SELECT division_id FROM auth_user_division_ids()))
+        )
+    ) THEN
+        RAISE EXCEPTION 'Akses ditolak: Hanya pengurus atau pembina sesi yang berhak membuat token QR.';
+    END IF;
+
+    IF v_session.status != 'open' THEN
+        RAISE EXCEPTION 'Tidak dapat membuat token QR untuk sesi yang belum dibuka atau telah ditutup (Status: %)', v_session.status;
     END IF;
 
     -- Generate cryptographically secure token
@@ -322,6 +337,20 @@ DECLARE
     v_existing attendance_records%ROWTYPE;
     v_new_record attendance_records%ROWTYPE;
 BEGIN
+    -- VibeSec Check: Caller authentication & authorization
+    IF auth.uid() IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Autentikasi diperlukan untuk mencatat kehadiran.');
+    END IF;
+
+    -- VibeSec Check: Prevent IDOR / "Titip Absen". Caller must be the member themself OR an authorized officer/mentor
+    IF auth.uid() != p_member_id AND NOT (
+        is_officer() OR (
+            auth_user_role() IN ('Ketua Divisi', 'Mentor')
+        )
+    ) THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Akses ditolak: Anda hanya dapat mencatatkan presensi untuk diri sendiri.');
+    END IF;
+
     -- Fetch session details
     SELECT * INTO v_session
     FROM attendance_sessions

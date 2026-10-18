@@ -3,3 +3,8 @@ dist
 .env
 .env.local
 .DS_Store
+*.xlsx
+*.xls
+*.csv
+*.tsbuildinfo
+supabase/.temp/

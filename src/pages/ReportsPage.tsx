@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import {
   FileSpreadsheet,
@@ -25,6 +26,7 @@ interface AttendanceReportRow {
 }
 
 export const ReportsPage: React.FC = () => {
+  const { profile, isMemberOnly, isDivisionScoped } = useAuth();
   const [reportType, setReportType] = useState<'attendance' | 'grades'>('attendance');
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState('ALL');
@@ -40,14 +42,20 @@ export const ReportsPage: React.FC = () => {
     setError('');
     try {
       const { data: divData } = await supabase.from('divisions').select('*').order('name');
-      setDivisions(divData || []);
+      // Member & petugas divisi hanya melihat divisi yang mereka ikuti
+      let divisionList = (divData || []) as any[];
+      if ((isMemberOnly || isDivisionScoped) && profile?.divisions?.length) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        divisionList = divisionList.filter((d: any) => myDivIds.has(d.id));
+      }
+      setDivisions(divisionList);
 
       // Fetch actual attendance records joined with sessions and users
       let query = supabase
         .from('attendance_records')
         .select(`
           id, status, scan_time, verification_method,
-          member:users (full_name, email),
+          member:members (full_name, user:users (email)),
           session:attendance_sessions (
             title, date, session_type, division_id,
             division:divisions (name)
@@ -69,7 +77,7 @@ export const ReportsPage: React.FC = () => {
           activity_type: rawSess?.session_type || rawSess?.activity_type || 'Wajib',
           date: rawSess?.date || '-',
           student_name: rawMem?.full_name || 'Anggota',
-          student_email: rawMem?.email || '',
+          student_email: rawMem?.user?.email || rawMem?.email || '',
           status: r.status,
           scan_time: r.scan_time ? new Date(r.scan_time).toLocaleTimeString('id-ID') : '-',
           method: r.verification_method || 'qr_scan',
@@ -115,19 +123,31 @@ export const ReportsPage: React.FC = () => {
       'Metode',
     ];
 
+    const sanitizeCsvField = (value: any) => {
+      if (value === null || value === undefined) return '""';
+      let str = String(value);
+      // Double quote escaping
+      str = str.replace(/"/g, '""');
+      // Prevent formula injection in Excel/Calc (=, +, -, @, \t, \r)
+      if (/^[=+\-@\t\r]/.test(str)) {
+        str = "'" + str;
+      }
+      return `"${str}"`;
+    };
+
     const rows = filteredAttendance.map((r) => [
-      `"${r.session_title}"`,
-      `"${r.division_name}"`,
-      `"${r.activity_type}"`,
-      `"${r.date}"`,
-      `"${r.student_name}"`,
-      `"${r.student_email}"`,
-      `"${r.status}"`,
-      `"${r.scan_time}"`,
-      `"${r.method}"`,
+      sanitizeCsvField(r.session_title),
+      sanitizeCsvField(r.division_name),
+      sanitizeCsvField(r.activity_type),
+      sanitizeCsvField(r.date),
+      sanitizeCsvField(r.student_name),
+      sanitizeCsvField(r.student_email),
+      sanitizeCsvField(r.status),
+      sanitizeCsvField(r.scan_time),
+      sanitizeCsvField(r.method),
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const csvContent = [headers.map(sanitizeCsvField).join(','), ...rows.map((row) => row.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -146,7 +166,7 @@ export const ReportsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top Filter and Action Card */}
       <div className="bg-white dark:bg-dark-800 p-5 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         <div>
@@ -154,7 +174,7 @@ export const ReportsPage: React.FC = () => {
             <FileSpreadsheet className="w-5 h-5 text-orens-600" />
             <span>Rekapitulasi Laporan Organisasi</span>
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-700 dark:text-gray-200 mt-0.5">
             Unduh data absensi dan penilaian aktual dalam format CSV untuk pelaporan sekolah.
           </p>
         </div>
@@ -170,7 +190,7 @@ export const ReportsPage: React.FC = () => {
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-xl transition-colors"
           >
             <Printer className="w-4 h-4" />
             <span>Cetak / PDF</span>
@@ -181,7 +201,7 @@ export const ReportsPage: React.FC = () => {
       {/* Filter Options */}
       <div className="bg-white dark:bg-dark-800 p-4 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-sm flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+          <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">
             Divisi:
           </label>
           <select
@@ -189,7 +209,7 @@ export const ReportsPage: React.FC = () => {
             onChange={(e) => setSelectedDivision(e.target.value)}
             className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100"
           >
-            <option value="ALL">Semua Divisi</option>
+            <option value="ALL">{isMemberOnly || isDivisionScoped ? 'Semua Divisi Saya' : 'Semua Divisi'}</option>
             {divisions.map((d) => (
               <option key={d.id} value={d.name}>
                 {d.name}
@@ -199,7 +219,7 @@ export const ReportsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+          <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">
             Dari Tanggal:
           </label>
           <input
@@ -211,7 +231,7 @@ export const ReportsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+          <label className="text-xs font-semibold text-gray-700 dark:text-gray-200">
             Sampai:
           </label>
           <input
@@ -248,14 +268,14 @@ export const ReportsPage: React.FC = () => {
         />
       ) : (
         <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-sm overflow-hidden">
-          <div className="p-3 bg-gray-50 dark:bg-dark-900/50 border-b border-gray-100 dark:border-dark-700 flex items-center justify-between text-xs text-gray-500">
+          <div className="p-3 bg-gray-50 dark:bg-dark-900/50 border-b border-gray-100 dark:border-dark-700 flex items-center justify-between text-xs text-gray-600 dark:text-gray-200">
             <span>Menampilkan {filteredAttendance.length} rekaman presensi aktual</span>
-            <span>Format: UTF-8 Encoded CSV Compatible</span>
+            <span>File CSV UTF-8, bisa dibuka di Excel</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
-              <thead className="bg-gray-50 dark:bg-dark-900/50 text-[11px] uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-dark-700">
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-sm text-gray-600 dark:text-gray-200">
+              <thead className="bg-gray-50 dark:bg-dark-900/50 text-[11px] uppercase tracking-wider font-bold text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-dark-700">
                 <tr>
                   <th className="py-3 px-4">Nama Siswa</th>
                   <th className="py-3 px-4">Sesi Pertemuan</th>
@@ -273,7 +293,7 @@ export const ReportsPage: React.FC = () => {
                       <div className="font-semibold text-gray-900 dark:text-gray-100">
                         {row.student_name}
                       </div>
-                      <div className="text-xs text-gray-400">{row.student_email}</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-200">{row.student_email}</div>
                     </td>
 
                     <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100">
@@ -282,18 +302,18 @@ export const ReportsPage: React.FC = () => {
 
                     <td className="py-3 px-4 text-xs">
                       <div>{row.division_name}</div>
-                      <span className="text-[10px] text-gray-400">{row.activity_type}</span>
+                      <span className="text-[10px] text-gray-600 dark:text-gray-200">{row.activity_type}</span>
                     </td>
 
-                    <td className="py-3 px-4 text-xs text-gray-500 dark:text-gray-400">
+                    <td className="py-3 px-4 text-xs text-gray-700 dark:text-gray-200">
                       {row.date}
                     </td>
 
-                    <td className="py-3 px-4 text-xs text-gray-500 dark:text-gray-400">
+                    <td className="py-3 px-4 text-xs text-gray-700 dark:text-gray-200">
                       {row.scan_time} WIB
                     </td>
 
-                    <td className="py-3 px-4 text-xs font-mono text-gray-500">
+                    <td className="py-3 px-4 text-xs font-mono text-gray-600 dark:text-gray-200">
                       {row.method}
                     </td>
 
@@ -315,6 +335,46 @@ export const ReportsPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile: kartu rekaman presensi */}
+          <ul className="md:hidden divide-y divide-gray-100 dark:divide-dark-700">
+            {filteredAttendance.map((row, idx) => (
+              <li key={idx} className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-base text-gray-900 dark:text-gray-100">
+                      {row.student_name}
+                    </p>
+                    <p className="text-xs text-gray-600 dark:text-gray-200 truncate">{row.student_email}</p>
+                  </div>
+                  <span
+                    className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                      row.status === 'Hadir'
+                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : row.status === 'Terlambat'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                        : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                    }`}
+                  >
+                    {row.status}
+                  </span>
+                </div>
+
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mt-2">
+                  {row.session_title}
+                </p>
+                <p className="text-xs text-gray-700 dark:text-gray-200 mt-0.5">
+                  {row.division_name} • {row.activity_type}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2.5 text-[11px] text-gray-700 dark:text-gray-200">
+                  <span>{row.date}</span>
+                  <span>Pindai: {row.scan_time} WIB</span>
+                  <span className="font-mono text-gray-600 dark:text-gray-200">{row.method}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

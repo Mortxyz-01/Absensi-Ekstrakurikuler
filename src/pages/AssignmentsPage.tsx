@@ -39,7 +39,7 @@ interface AssignmentItem {
 }
 
 export const AssignmentsPage: React.FC = () => {
-  const { profile, canManageAssignments, isMemberOnly } = useAuth();
+  const { profile, canManageAssignments, isMemberOnly, isDivisionScoped } = useAuth();
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,9 +74,15 @@ export const AssignmentsPage: React.FC = () => {
     setError('');
     try {
       const { data: divData } = await supabase.from('divisions').select('*').order('name');
-      setDivisions(divData || []);
-      if (divData && divData.length > 0 && !newDivisionId) {
-        setNewDivisionId(divData[0].id);
+      // Member & petugas divisi hanya melihat divisi yang mereka ikuti
+      let divisionList = (divData || []) as any[];
+      if ((isMemberOnly || isDivisionScoped) && profile?.divisions?.length) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        divisionList = divisionList.filter((d: any) => myDivIds.has(d.id));
+      }
+      setDivisions(divisionList);
+      if (divisionList.length > 0 && !newDivisionId) {
+        setNewDivisionId(divisionList[0].id);
       }
 
       // Fetch assignments
@@ -128,7 +134,12 @@ export const AssignmentsPage: React.FC = () => {
   }, [profile]);
 
   const filtered = assignments.filter((a) => {
-    if (selectedDivision === 'ALL') return true;
+    if (selectedDivision === 'ALL') {
+      if ((isMemberOnly || isDivisionScoped) && divisions.length > 0) {
+        return divisions.some((d) => d.id === a.division_id);
+      }
+      return true;
+    }
     return a.division_id === selectedDivision;
   });
 
@@ -176,7 +187,7 @@ export const AssignmentsPage: React.FC = () => {
         submission_text: submissionText.trim(),
         status: 'submitted',
         submitted_at: new Date().toISOString(),
-      });
+      }, { onConflict: 'assignment_id,member_id' });
 
       if (subErr) throw subErr;
 
@@ -224,7 +235,7 @@ export const AssignmentsPage: React.FC = () => {
         .from('assignment_submissions')
         .select(`
           id, assignment_id, member_id, submission_text, submitted_at,
-          member:users (full_name, email),
+          member:members (full_name, user:users (email)),
           grade:assignment_grades (id, raw_score, normalized_score, feedback)
         `)
         .eq('assignment_id', a.id);
@@ -322,7 +333,7 @@ export const AssignmentsPage: React.FC = () => {
             onChange={(e) => setSelectedDivision(e.target.value)}
             className="px-3 py-2 text-xs font-medium rounded-xl border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
           >
-            <option value="ALL">Semua Divisi</option>
+            <option value="ALL">{isMemberOnly || isDivisionScoped ? 'Semua Divisi Saya' : 'Semua Divisi'}</option>
             {divisions.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -330,7 +341,7 @@ export const AssignmentsPage: React.FC = () => {
             ))}
           </select>
 
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-xs text-gray-700 dark:text-gray-200">
             {filtered.length} Tugas Tersedia (Bobot Penilaian 60%)
           </span>
         </div>
@@ -374,7 +385,7 @@ export const AssignmentsPage: React.FC = () => {
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orens-100 dark:bg-orens-950/60 text-orens-700 dark:text-orens-300">
                       {a.division?.name || 'Umum'}
                     </span>
-                    <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                    <span className="text-[10px] font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-orens-600" />
                       <span>Tenggat: {new Date(a.due_date).toLocaleDateString('id-ID')}</span>
                     </span>
@@ -383,7 +394,7 @@ export const AssignmentsPage: React.FC = () => {
                   <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1">
                     {a.title}
                   </h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3 mb-4">
+                  <p className="text-xs text-gray-700 dark:text-gray-200 line-clamp-3 mb-4">
                     {a.description}
                   </p>
                 </div>
@@ -426,7 +437,7 @@ export const AssignmentsPage: React.FC = () => {
                   {canManageAssignments && (
                     <button
                       onClick={() => openGradingModal(a)}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-dark-700 hover:bg-gray-100 dark:hover:bg-dark-600 rounded-xl transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-dark-700 hover:bg-gray-100 dark:hover:bg-dark-600 rounded-xl transition-colors"
                     >
                       <Award className="w-4 h-4 text-orens-600" />
                       <span>Evaluasi & Beri Nilai Siswa</span>
@@ -441,18 +452,18 @@ export const AssignmentsPage: React.FC = () => {
 
       {/* MEMBER SUBMIT MODAL */}
       {submittingAssignment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-gray-100">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
               <div>
                 <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
                   Pengumpulan Tugas
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{submittingAssignment.title}</p>
+                <p className="text-xs text-gray-700 dark:text-gray-200">{submittingAssignment.title}</p>
               </div>
               <button
                 onClick={() => setSubmittingAssignment(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                className="text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -460,7 +471,7 @@ export const AssignmentsPage: React.FC = () => {
 
             <form onSubmit={handleSubmitWork} className="space-y-4 my-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Jawaban Tugas (Teks atau Tautan URL GitHub/Figma/Google Drive):
                 </label>
                 <textarea
@@ -477,7 +488,7 @@ export const AssignmentsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setSubmittingAssignment(null)}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
+                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
                 >
                   Batal
                 </button>
@@ -496,20 +507,20 @@ export const AssignmentsPage: React.FC = () => {
 
       {/* STAFF GRADING MODAL */}
       {gradingAssignment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-2xl max-w-2xl w-full p-6 text-gray-900 dark:text-gray-100">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
               <div>
                 <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
                   Evaluasi Jawaban Siswa
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-gray-700 dark:text-gray-200">
                   {gradingAssignment.title} (Bobot 60%)
                 </p>
               </div>
               <button
                 onClick={() => setGradingAssignment(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                className="text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -517,7 +528,7 @@ export const AssignmentsPage: React.FC = () => {
 
             <div className="my-4 max-h-80 overflow-y-auto space-y-3">
               {submissionsList.length === 0 ? (
-                <p className="text-xs text-center text-gray-400 italic py-8">
+                <p className="text-xs text-center text-gray-600 dark:text-gray-200 italic py-8">
                   Belum ada siswa yang mengumpulkan tugas ini.
                 </p>
               ) : (
@@ -536,7 +547,7 @@ export const AssignmentsPage: React.FC = () => {
                           <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
                             {rawMem?.full_name || 'Anggota'}
                           </p>
-                          <p className="text-[10px] text-gray-400">
+                          <p className="text-[10px] text-gray-600 dark:text-gray-200">
                             Dikirim: {new Date(sub.submitted_at).toLocaleString('id-ID')}
                           </p>
                         </div>
@@ -551,12 +562,12 @@ export const AssignmentsPage: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="p-2.5 rounded-lg bg-white dark:bg-dark-800 text-xs text-gray-700 dark:text-gray-300 border border-gray-100 dark:border-dark-700 break-words">
+                      <div className="p-2.5 rounded-lg bg-white dark:bg-dark-800 text-xs text-gray-700 dark:text-gray-200 border border-gray-100 dark:border-dark-700 break-words">
                         {sub.submission_text}
                       </div>
 
                       {rawGrade?.feedback && (
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400 italic">
+                        <p className="text-[11px] text-gray-700 dark:text-gray-200 italic">
                           Catatan: {rawGrade.feedback}
                         </p>
                       )}
@@ -565,7 +576,7 @@ export const AssignmentsPage: React.FC = () => {
                       {isBeingGraded ? (
                         <div className="mt-2 pt-2 border-t border-gray-200 dark:border-dark-700 flex flex-col gap-2">
                           <div className="flex items-center gap-2">
-                            <label className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                            <label className="text-xs font-bold text-gray-700 dark:text-gray-200">
                               Nilai (0-100):
                             </label>
                             <input
@@ -587,7 +598,7 @@ export const AssignmentsPage: React.FC = () => {
                           <div className="flex justify-end gap-2 mt-1">
                             <button
                               onClick={() => setGradingSubId(null)}
-                              className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700"
+                              className="px-3 py-1 text-xs text-gray-600 dark:text-gray-200 hover:text-gray-700"
                             >
                               Batal
                             </button>
@@ -623,7 +634,7 @@ export const AssignmentsPage: React.FC = () => {
             <div className="flex justify-end pt-3 border-t border-gray-100 dark:border-dark-700">
               <button
                 onClick={() => setGradingAssignment(null)}
-                className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
+                className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
               >
                 Selesai
               </button>
@@ -634,7 +645,7 @@ export const AssignmentsPage: React.FC = () => {
 
       {/* CREATE ASSIGNMENT MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-gray-100">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
               <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
@@ -642,7 +653,7 @@ export const AssignmentsPage: React.FC = () => {
               </h3>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                className="text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -650,7 +661,7 @@ export const AssignmentsPage: React.FC = () => {
 
             <form onSubmit={handleCreateAssignment} className="space-y-3.5 my-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Judul Tugas:
                 </label>
                 <input
@@ -665,7 +676,7 @@ export const AssignmentsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Divisi:
                   </label>
                   <select
@@ -683,7 +694,7 @@ export const AssignmentsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Tenggat Waktu:
                   </label>
                   <input
@@ -697,7 +708,7 @@ export const AssignmentsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Instruksi & Deskripsi Tugas:
                 </label>
                 <textarea
@@ -713,7 +724,7 @@ export const AssignmentsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
+                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
                 >
                   Batal
                 </button>

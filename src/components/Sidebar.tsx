@@ -14,36 +14,34 @@ import {
   Moon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface SidebarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  isDark: boolean;
-  toggleTheme: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   setCurrentTab,
-  isDark,
-  toggleTheme,
 }) => {
-  const { profile, role, logout, canManageMembers, isTopAdmin } = useAuth();
+  const { profile, role, logout, canManageMembers, isTopAdmin, canViewReports, canViewDivisions } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
     { id: 'members', label: 'Anggota', icon: Users, show: canManageMembers },
-    { id: 'divisions', label: 'Divisi', icon: Layers, show: true },
+    { id: 'divisions', label: 'Divisi', icon: Layers, show: canViewDivisions },
     { id: 'attendance', label: 'Absensi', icon: QrCode, show: true },
     { id: 'materials', label: 'Materi', icon: BookOpen, show: true },
     { id: 'assignments', label: 'Tugas', icon: FileCheck2, show: true },
     { id: 'grades', label: 'Nilai', icon: GraduationCap, show: true },
-    { id: 'reports', label: 'Laporan', icon: FileSpreadsheet, show: !profile?.role?.name || profile.role.name !== 'Member' },
+    { id: 'reports', label: 'Laporan', icon: FileSpreadsheet, show: canViewReports },
     { id: 'audit', label: 'Log Audit', icon: ShieldAlert, show: isTopAdmin },
   ];
 
   return (
-    <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-dark-900 border-r border-gray-200 dark:border-dark-700 min-h-screen select-none">
+    <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-dark-900 border-r border-gray-200 dark:border-dark-700 md:sticky md:top-0 md:h-screen select-none">
       {/* Brand Header */}
       <div className="p-5 border-b border-gray-200 dark:border-dark-700 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -56,7 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-tight">
               Orens Solution
             </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-700 dark:text-gray-200">
               Management System
             </p>
           </div>
@@ -65,7 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* User Info Capsule */}
       <div className="p-4 mx-3 my-3 bg-gray-50 dark:bg-dark-800 rounded-xl border border-gray-100 dark:border-dark-700">
-        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Pengguna Masuk</p>
+        <p className="text-xs text-gray-700 dark:text-gray-200 font-medium">Pengguna Masuk</p>
         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
           {profile?.full_name || 'Memuat...'}
         </p>
@@ -89,10 +87,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-orens-600 text-white shadow-sm shadow-orens-600/20'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-800 hover:text-gray-900 dark:hover:text-gray-100'
+                  : 'text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-800 hover:text-gray-900 dark:hover:text-gray-100'
               }`}
             >
-              <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`} />
+              <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-500 dark:text-gray-300'}`} />
               <span>{item.label}</span>
             </button>
           );
@@ -103,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 border-t border-gray-200 dark:border-dark-700 space-y-1">
         <button
           onClick={toggleTheme}
-          className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg transition-colors"
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-dark-800 rounded-lg transition-colors"
         >
           <span className="flex items-center gap-2">
             {isDark ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4 text-indigo-500" />}

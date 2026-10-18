@@ -29,8 +29,18 @@ interface MaterialItem {
   division?: { name: string; code: string };
 }
 
+function isValidHttpUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export const MaterialsPage: React.FC = () => {
-  const { profile, canManageMaterials } = useAuth();
+  const { profile, canManageMaterials, isMemberOnly, isDivisionScoped } = useAuth();
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,9 +62,15 @@ export const MaterialsPage: React.FC = () => {
     setError('');
     try {
       const { data: divData } = await supabase.from('divisions').select('*').order('name');
-      setDivisions(divData || []);
-      if (divData && divData.length > 0 && !newDivisionId) {
-        setNewDivisionId(divData[0].id);
+      // Member & petugas divisi hanya melihat divisi yang mereka ikuti
+      let divisionList = (divData || []) as any[];
+      if ((isMemberOnly || isDivisionScoped) && profile?.divisions?.length) {
+        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
+        divisionList = divisionList.filter((d: any) => myDivIds.has(d.id));
+      }
+      setDivisions(divisionList);
+      if (divisionList.length > 0 && !newDivisionId) {
+        setNewDivisionId(divisionList[0].id);
       }
 
       const { data, error: matErr } = await supabase
@@ -80,13 +96,21 @@ export const MaterialsPage: React.FC = () => {
     const matchSearch =
       m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (m.description && m.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchDiv = selectedDivision === 'ALL' || m.division_id === selectedDivision;
+    const matchDiv =
+      selectedDivision === 'ALL'
+        ? (!isDivisionScoped || divisions.length === 0 || divisions.some((d) => d.id === m.division_id))
+        : m.division_id === selectedDivision;
     return matchSearch && matchDiv;
   });
 
   const handleCreateMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDivisionId) return;
+
+    if (newLink.trim() && !isValidHttpUrl(newLink.trim())) {
+      alert('Tautan materi harus berupa URL yang valid dengan awalan http:// atau https://');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -136,7 +160,7 @@ export const MaterialsPage: React.FC = () => {
       {/* Search and Action Bar */}
       <div className="bg-white dark:bg-dark-800 p-4 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-sm flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-600 dark:text-gray-200" />
           <input
             type="text"
             value={searchTerm}
@@ -152,7 +176,7 @@ export const MaterialsPage: React.FC = () => {
             onChange={(e) => setSelectedDivision(e.target.value)}
             className="px-3 py-2 text-xs font-medium rounded-xl border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-orens-500"
           >
-            <option value="ALL">Semua Divisi</option>
+            <option value="ALL">{isMemberOnly || isDivisionScoped ? 'Semua Divisi Saya' : 'Semua Divisi'}</option>
             {divisions.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -212,13 +236,13 @@ export const MaterialsPage: React.FC = () => {
                 <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-1 line-clamp-2">
                   {m.title}
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3 mb-4">
+                <p className="text-xs text-gray-700 dark:text-gray-200 line-clamp-3 mb-4">
                   {m.description || 'Tidak ada deskripsi tambahan.'}
                 </p>
               </div>
 
               <div className="pt-3 border-t border-gray-100 dark:border-dark-700 flex items-center justify-between">
-                {m.external_link ? (
+                {m.external_link && isValidHttpUrl(m.external_link) ? (
                   <a
                     href={m.external_link}
                     target="_blank"
@@ -229,7 +253,7 @@ export const MaterialsPage: React.FC = () => {
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 ) : (
-                  <span className="text-[11px] text-gray-400 italic">Materi In-Class</span>
+                  <span className="text-[11px] text-gray-600 dark:text-gray-200 italic">Materi tatap muka</span>
                 )}
 
                 {canManageMaterials && (
@@ -239,7 +263,7 @@ export const MaterialsPage: React.FC = () => {
                     className={`p-1.5 rounded-lg text-xs ${
                       m.status === 'archived'
                         ? 'text-amber-600 bg-amber-50 dark:bg-amber-950/30'
-                        : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
+                        : 'text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200'
                     }`}
                   >
                     <Archive className="w-4 h-4" />
@@ -253,7 +277,7 @@ export const MaterialsPage: React.FC = () => {
 
       {/* CREATE MATERIAL MODAL */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 shadow-2xl max-w-md w-full p-6 text-gray-900 dark:text-gray-100">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-dark-700">
               <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
@@ -261,7 +285,7 @@ export const MaterialsPage: React.FC = () => {
               </h3>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
+                className="text-gray-600 dark:text-gray-200 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -269,7 +293,7 @@ export const MaterialsPage: React.FC = () => {
 
             <form onSubmit={handleCreateMaterial} className="space-y-3.5 my-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Judul Materi:
                 </label>
                 <input
@@ -284,7 +308,7 @@ export const MaterialsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Divisi:
                   </label>
                   <select
@@ -302,7 +326,7 @@ export const MaterialsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                     Tingkat Kesulitan:
                   </label>
                   <select
@@ -318,7 +342,7 @@ export const MaterialsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Deskripsi / Catatan Materi:
                 </label>
                 <textarea
@@ -331,7 +355,7 @@ export const MaterialsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   Tautan Eksternal (Google Drive / GitHub / Video):
                 </label>
                 <input
@@ -347,7 +371,7 @@ export const MaterialsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
+                  className="px-4 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 rounded-lg"
                 >
                   Batal
                 </button>

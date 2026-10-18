@@ -5,8 +5,6 @@ import {
   Users,
   Calendar,
   CheckCircle2,
-  Clock,
-  ArrowRight,
   QrCode,
   Layers,
   BookOpen,
@@ -59,8 +57,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const [totalMembers, setTotalMembers] = useState(0);
   const [totalSessions, setTotalSessions] = useState(0);
   const [overallAttendanceRate, setOverallAttendanceRate] = useState(0);
-  const [openSession, setOpenSession] = useState<AttendanceSession | null>(null);
-
   // Graphics & Charts State
   const [divisionList, setDivisionList] = useState<DivisionOverview[]>([]);
   const [dailyTrend, setDailyTrend] = useState<DailyAttendancePoint[]>([]);
@@ -86,9 +82,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       const colors = ['#ea580c', '#2563eb', '#10b981', '#8b5cf6', '#ec4899'];
 
       if (!summaryErr && summaryData) {
-        setTotalMembers(summaryData.total_members || 34);
-        setTotalSessions(summaryData.total_sessions || 9);
-        setOverallAttendanceRate(summaryData.attendance_rate || 88.9);
+        setTotalMembers(summaryData.total_members ?? 0);
+        setTotalSessions(summaryData.total_sessions ?? 0);
+        setOverallAttendanceRate(summaryData.attendance_rate ?? 0);
 
         // Divisions calculation
         const rawDivs = summaryData.divisions || [];
@@ -137,24 +133,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       if (!summaryData) setTotalSessions(allSessions.length);
       setRecentSessions(allSessions.slice(0, 4));
 
-      // Match open session
-      if (isMemberOnly && profile?.divisions && profile.divisions.length > 0) {
-        const myDivIds = new Set(profile.divisions.map((d: any) => d.division_id));
-        const matchedOpen = allSessions.find(
-          (s) => s.status === 'open' && (!s.division_id || myDivIds.has(s.division_id))
-        );
-        setOpenSession(matchedOpen || null);
-      } else {
-        const anyOpen = allSessions.find((s) => s.status === 'open');
-        setOpenSession(anyOpen || null);
-      }
-
       // 3. Fetch Recent Attendance Records for Activity Feed
       const { data: recData } = await supabase
         .from('attendance_records')
         .select(`
           id, session_id, member_id, status, scan_time, verification_method,
-          member:users(full_name, email),
+          member:members(full_name),
           session:attendance_sessions(title, division_id, division:divisions(name))
         `)
         .order('scan_time', { ascending: false })
@@ -255,16 +239,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   // SVG Donut Chart Math
   const donutRadius = 60;
   const circumference = 2 * Math.PI * donutRadius; // ~376.99
-  let accumulatedAngle = 0;
   const totalDivCount = divisionList.reduce((acc, d) => acc + d.memberCount, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* 1. GREETING & HERO BANNER */}
       <div className="bg-gradient-to-r from-gray-900 via-dark-800 to-gray-900 text-white rounded-2xl p-6 sm:p-7 border border-gray-800 shadow-md">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <p className="text-xs text-gray-400 font-medium mb-1">
+            <p className="text-xs text-gray-200 font-medium mb-1">
               {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
 
@@ -285,51 +268,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* 2. REAL-TIME ACTIVE SESSION BANNER (if open) */}
-      {openSession && (
-        <div className="bg-orens-50 dark:bg-orens-950/30 border-2 border-orens-500/50 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2.5 bg-orens-600 text-white rounded-xl shrink-0 shadow-sm">
-              <Clock className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                <span className="text-xs font-bold uppercase tracking-wider text-orens-700 dark:text-orens-400">
-                  Sesi Presensi Sedang Dibuka
-                </span>
-              </div>
-              <h3 className="text-sm sm:text-base font-bold text-gray-900 dark:text-gray-100 mt-0.5">
-                {openSession.title}
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Divisi: {openSession.division?.name || 'Semua Divisi'} • Kode Cadangan: <strong className="font-mono text-orens-700 dark:text-orens-400">{openSession.backup_code}</strong>
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => onNavigate('attendance')}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-orens-600 hover:bg-orens-700 active:bg-orens-800 rounded-xl transition-colors shadow-sm shrink-0 self-end sm:self-auto"
-          >
-            <span>{isMemberOnly ? 'Pindai / Masukkan Kode' : 'Buka Layar QR Pop-up'}</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* 3. CORE METRIC TILES */}
       {isMemberOnly ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Kehadiran Sesi Wajib</span>
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
-              {myAttendanceCount} <span className="text-sm font-semibold text-gray-400">/ {myTotalEligibleSessions} Sesi</span>
+              {myAttendanceCount} <span className="text-sm font-semibold text-gray-600 dark:text-gray-200">/ {myTotalEligibleSessions} Sesi</span>
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               {myTotalEligibleSessions > 0
                 ? `${Math.round((myAttendanceCount / myTotalEligibleSessions) * 100)}% kehadiran tercatat`
                 : '100% kehadiran tercatat'}
@@ -337,27 +287,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
 
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Rata-Rata Tugas</span>
               <FileCheck2 className="w-4 h-4 text-blue-600" />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
               {myAverageGrade !== null ? myAverageGrade : 88.5}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               Evaluasi proyek dan modul divisi
             </p>
           </div>
 
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Divisi Terdaftar</span>
               <Layers className="w-4 h-4 text-purple-600" />
             </div>
             <div className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-2 line-clamp-1">
               {(profile?.divisions || []).map((d: any) => d.division?.name).join(', ') || 'Game Development'}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               Status anggota aktif
             </p>
           </div>
@@ -365,53 +315,53 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Total Siswa Terdaftar</span>
               <Users className="w-4 h-4 text-blue-600" />
             </div>
             <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
               {totalMembers}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               Tersebar di 5 divisi peminatan
             </p>
           </div>
 
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Tingkat Kehadiran</span>
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             </div>
             <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
               {overallAttendanceRate}%
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               Rasio kehadiran sesi selesai
             </p>
           </div>
 
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Total Sesi Pertemuan</span>
               <Calendar className="w-4 h-4 text-purple-600" />
             </div>
             <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
               {totalSessions}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-              {openSession ? '1 sesi aktif sedang dibuka' : 'Semua sesi terjadwal'}
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
+              Semua sesi terjadwal
             </p>
           </div>
 
           <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
+            <div className="flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-200">
               <span>Divisi Peminatan</span>
               <Layers className="w-4 h-4 text-orens-600" />
             </div>
             <div className="text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
               {divisionList.length}
             </div>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               1 Kadiv & 2 Mentor per divisi
             </p>
           </div>
@@ -429,7 +379,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 Grafik Tren Kehadiran (7 Hari Terakhir)
               </h3>
             </div>
-            <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">
+            <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">
               Interaktif • Hover titik data
             </span>
           </div>
@@ -450,13 +400,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <line x1={padX} y1={chartHeight - padY} x2={chartWidth - padX} y2={chartHeight - padY} stroke="#cbd5e1" className="dark:stroke-dark-600" />
 
               {/* Y Axis Labels */}
-              <text x={padX - 8} y={padY + 4} textAnchor="end" className="text-[10px] fill-gray-400 font-mono">
+              <text x={padX - 8} y={padY + 4} textAnchor="end" className="text-[10px] fill-gray-500 font-mono">
                 {maxVal}
               </text>
-              <text x={padX - 8} y={chartHeight / 2 + 4} textAnchor="end" className="text-[10px] fill-gray-400 font-mono">
+              <text x={padX - 8} y={chartHeight / 2 + 4} textAnchor="end" className="text-[10px] fill-gray-500 font-mono">
                 {Math.round(maxVal / 2)}
               </text>
-              <text x={padX - 8} y={chartHeight - padY + 3} textAnchor="end" className="text-[10px] fill-gray-400 font-mono">
+              <text x={padX - 8} y={chartHeight - padY + 3} textAnchor="end" className="text-[10px] fill-gray-500 font-mono">
                 0
               </text>
 
@@ -493,7 +443,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     x={p.x}
                     y={chartHeight - padY + 16}
                     textAnchor="middle"
-                    className="text-[10px] fill-gray-500 dark:fill-gray-400 font-medium"
+                    className="text-[10px] fill-gray-600 dark:fill-gray-500 font-medium"
                   >
                     {p.label}
                   </text>
@@ -510,8 +460,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             )}
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-dark-700 text-xs text-gray-500 dark:text-gray-400">
-            <span>Rekaman pemindaian QR absensi aktif per tanggal</span>
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-dark-700 text-xs text-gray-700 dark:text-gray-200">
+            <span>Presensi QR 7 hari terakhir</span>
             <span className="font-semibold text-orens-600 dark:text-orens-400">Total Hadir: {dailyTrend.reduce((a, b) => a + b.count, 0)} Siswa</span>
           </div>
         </div>
@@ -525,7 +475,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 Distribusi 5 Divisi
               </h3>
             </div>
-            <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400">
+            <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200">
               {totalDivCount} Siswa
             </span>
           </div>
@@ -535,8 +485,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <svg width="150" height="150" viewBox="0 0 150 150" className="transform -rotate-90">
               {divisionList.map((div, i) => {
                 const strokeDash = (div.percentage / 100) * circumference;
-                const offset = -accumulatedAngle;
-                accumulatedAngle += strokeDash;
+                const priorPercent = divisionList.slice(0, i).reduce((sum, d) => sum + d.percentage, 0);
+                const offset = -(priorPercent / 100) * circumference;
 
                 return (
                   <circle
@@ -562,7 +512,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <span className="text-xl font-black text-gray-900 dark:text-gray-100">
                 {hoveredDivision ? `${hoveredDivision.memberCount}` : totalDivCount}
               </span>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-gray-400">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-gray-600 dark:text-gray-200">
                 {hoveredDivision ? hoveredDivision.code.toUpperCase() : 'Total Siswa'}
               </span>
             </div>
@@ -581,11 +531,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               >
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: div.color }} />
-                  <span className="font-semibold text-gray-700 dark:text-gray-300 truncate max-w-[120px]">
+                  <span className="font-semibold text-gray-700 dark:text-gray-200 truncate max-w-[120px]">
                     {div.name}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 text-[11px] font-mono text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-1 text-[11px] font-mono text-gray-700 dark:text-gray-200">
                   <span className="font-bold text-gray-900 dark:text-gray-100">{div.memberCount}</span>
                   <span>({div.percentage}%)</span>
                 </div>
@@ -625,7 +575,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
                     {sess.title}
                   </p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  <p className="text-[10px] text-gray-700 dark:text-gray-200 mt-0.5">
                     Tanggal: {sess.date} • Waktu: {sess.start_time} - {sess.end_time} WIB • Divisi: {sess.division?.name || 'Semua Divisi'}
                   </p>
                 </div>
@@ -636,7 +586,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       sess.status === 'open'
                         ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                         : sess.status === 'closed'
-                        ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+                        ? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
                         : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                     }`}
                   >
@@ -657,11 +607,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 Presensi Terakhir
               </h3>
             </div>
-            <span className="text-[10px] text-gray-400 font-medium">Real-Time</span>
+            <span className="text-[10px] text-gray-600 dark:text-gray-200 font-medium">Real-Time</span>
           </div>
 
           {recentActivities.length === 0 ? (
-            <p className="text-xs text-gray-400 italic py-6 text-center">
+            <p className="text-xs text-gray-600 dark:text-gray-200 italic py-6 text-center">
               Belum ada rekaman presensi terbaru.
             </p>
           ) : (
@@ -675,7 +625,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                     <p className="text-xs font-bold text-gray-900 dark:text-gray-100">
                       {act.studentName}
                     </p>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[140px]">
+                    <p className="text-[10px] text-gray-700 dark:text-gray-200 truncate max-w-[140px]">
                       {act.divisionName} • {act.scanTime} WIB
                     </p>
                   </div>

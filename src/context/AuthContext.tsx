@@ -15,8 +15,11 @@ interface AuthContextType {
   canManageMaterials: boolean;
   canManageAssignments: boolean;
   isMemberOnly: boolean;
+  isDivisionScoped: boolean;
+  canViewReports: boolean;
+  canViewDivisions: boolean;
   divisionIds: string[];
-  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -126,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async (email: string, password = 'Orens2026!') => {
+  const login = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -164,6 +167,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const canManageMaterials = isTopAdmin || role === 'Wakil Ketua' || role === 'Sekretaris' || role === 'Ketua Divisi' || role === 'Mentor';
   const canManageAssignments = isTopAdmin || role === 'Ketua Divisi' || role === 'Mentor';
   const isMemberOnly = role === 'Member';
+  // Petugas yang datanya terkunci pada divisinya sendiri (Ketua Divisi / Mentor)
+  const isDivisionScoped = role === 'Ketua Divisi' || role === 'Mentor';
+  // Pulang kebijakan: Laporan & Divisi hanya untuk Pembina, Ketua, Wakil, Sekre
+  const canViewReports = isTopAdmin || role === 'Wakil Ketua' || role === 'Sekretaris';
+  const canViewDivisions = canViewReports;
 
   const divisionIds = (profile?.divisions || []).map((d) => d.division_id);
 
@@ -181,6 +189,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         canManageMaterials,
         canManageAssignments,
         isMemberOnly,
+        isDivisionScoped,
+        canViewReports,
+        canViewDivisions,
         divisionIds,
         login,
         logout,

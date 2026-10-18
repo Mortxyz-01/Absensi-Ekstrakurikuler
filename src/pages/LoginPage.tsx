@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { ThemeToggle } from '../context/ThemeContext';
 import { KeyRound, Mail, AlertCircle, Loader2, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -26,6 +27,8 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-900 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <ThemeToggle />
+
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <img
           src="/logo.png"
@@ -35,7 +38,7 @@ export const LoginPage: React.FC = () => {
         <h2 className="mt-4 text-2xl font-extrabold text-gray-900 dark:text-gray-100 tracking-tight">
           Orens Solution
         </h2>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+        <p className="mt-1 text-sm text-gray-600 dark:text-gray-200">
           Sistem Manajemen Ekstrakurikuler
         </p>
       </div>
@@ -51,11 +54,11 @@ export const LoginPage: React.FC = () => {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                 Alamat Email
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-600 dark:text-gray-200">
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
@@ -70,11 +73,11 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200 mb-1">
                 Kata Sandi
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-600 dark:text-gray-200">
                   <KeyRound className="w-4 h-4" />
                 </div>
                 <input

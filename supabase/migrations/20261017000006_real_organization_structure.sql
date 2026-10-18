@@ -3,7 +3,7 @@
 
 DO $$
 DECLARE
-    v_pwd_hash TEXT := crypt('Orens2026!', gen_salt('bf'));
+    v_pwd_hash TEXT := crypt('Orens2026!', gen_salt('bf', 10));
     v_role_ketua UUID := '00000000-0000-0000-0000-000000000002';
     v_role_wakil UUID := '00000000-0000-0000-0000-000000000003';
     v_role_sekre UUID := '00000000-0000-0000-0000-000000000004';
