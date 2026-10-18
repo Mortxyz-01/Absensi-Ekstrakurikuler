@@ -35,31 +35,32 @@ Peringatan CSP: `index.html` memakai `script-src 'self'` sehingga **halaman dev 
 
 ## 2. Akun untuk Pengujian
 
-Semua akun memakai password yang sama: `Orens2026!` (bcrypt). Login via REST terverifikasi. **Jangan membuat akun secara manual via SQL ke `auth.users` tanpa mengisi kolom token: Supabase GoTrue menolak baris dengan `confirmation_token`, `email_change`, `recovery_token`, dst. bernilai NULL (error "Database error querying schema"). Isi dengan string kosong `''`.**
+Akun uji diisi otomatis oleh `supabase/seed.sql` plus migrasi `20261017000005_seed_game_dev_students.sql` dan `20261017000006_real_organization_structure.sql`. Semua akun uji memakai satu sandi yang sama; sandinya didefinisikan langsung di ketiga file tersebut (`v_pwd_hash`), tidak dituliskan di README supaya tidak ikut tersebar. Login via REST terverifikasi. **Jangan membuat akun secara manual via SQL ke `auth.users` tanpa mengisi kolom token: Supabase GoTrue menolak baris dengan `confirmation_token`, `email_change`, `recovery_token`, dst. bernilai NULL (error "Database error querying schema"). Isi dengan string kosong `''`.**
 
-Akun pengurus (roster riil):
+Email di tabel di bawah adalah akun dummy repo. Database lokal milikmu boleh memuat email berbeda (misalnya roster asli yang tidak ikut di-push); sesuaikan email saat login dengan isi DB-mu sendiri.
 
-| Peran | Nama | Email |
-|---|---|---|
-| Pembina | Budi Santoso, M.Kom. | `pembina@orens.org` |
-| Ketua | Gregorius Wibisono | `gregorius5069.pplg1@smkprestasiprima.sch.id` |
-| Wakil Ketua | Rizqy Dwi Budi Rabbani | `rizqy5086.pplg1@smkprestasiprima.sch.id` |
-| Sekretaris | Daud Sanggalangi Patuli | `daud5063.pplg1@smkprestasiprima.sch.id` |
-| Sekretaris | Zefanya Anastasia Setiawan | `zefanya5092.pplg1@smkprestasiprima.sch.id` |
-| Ketua Divisi | 5 orang (Bayu/Cybersec, Gagah/Gamedev, Kayla/UIUX, Nathaniel/Cybersec, Tober/Web) | pattern `<nama><no>.pplg<N>@smkprestasiprima.sch.id`, contoh `gagah5067.pplg1@...` |
-| Mentor | 6 orang (semua per divisinya) | pattern sama, contoh `ghifari5068.pplg1@smkprestasiprima.sch.id` |
+Akun pengurus (dummy):
+
+| Peran | Email |
+|---|---|
+| Pembina | `pembina@orens.org` |
+| Ketua Umum | `ketua@example.com` |
+| Wakil Ketua | `wakil@example.com` |
+| Sekretaris | `sekre1@example.com`, `sekre2@example.com` |
+| Ketua Divisi | `kadiv.cybersec@example.com`, `kadiv.gamedev@example.com`, `kadiv.webdev@example.com`, `kadiv.uiux@example.com` |
+| Mentor | `mentor1.<div>@example.com` dan `mentor2.<div>@example.com` (cybersec, gamedev, webdev, uiux) |
 
 Daftar lengkap: `SELECT email, full_name FROM users u JOIN roles r ON r.id=u.role_id;` Semua divisi membawai 1 akun member dummy siap pakai:
 
 | Akun Member Dummy | Divisi |
 |---|---|
-| `dummy.gamedev01@smkprestasiprima.sch.id` | Game Development |
-| `dummy.webdev01@smkprestasiprima.sch.id` | Web Development |
-| `dummy.uiux01@smkprestasiprima.sch.id` | UI/UX |
-| `dummy.cybersec01@smkprestasiprima.sch.id` | Cybersecurity |
-| `dummy.esport01@smkprestasiprima.sch.id` | Esport |
+| `dummy.gamedev01@example.com` | Game Development |
+| `dummy.webdev01@example.com` | Web Development |
+| `dummy.uiux01@example.com` | UI/UX |
+| `dummy.cybersec01@example.com` | Cybersecurity |
+| `dummy.esport01@example.com` | Esport |
 
-Sumber akun: `supabase/seed.sql` dan migrasi `20261017000005_seed_game_dev_students.sql` (fungsi `create_gd_student` masih bisa dipanggil ulang). Akun member dummy dibuat langsung via psql (data uji, bukan migrasi).
+Sumber akun: `supabase/seed.sql` dan migrasi `20261017000005_seed_game_dev_students.sql` (fungsi `create_gd_student` masih bisa dipanggil ulang; 10 siswa Game Development dengan nama `Siswa Game Development 01` sampai `10`). Akun member dummy dibuat langsung via psql (data uji, bukan migrasi).
 
 ## 3. Matriks Hak Akses (sumber kebenaran: RLS + `AuthContext`)
 
@@ -141,10 +142,10 @@ Sisi UI wajib bisa klik-uji satu per satu (tombol, form, modal, tab). Jika tidak
 **Pengujian E2E lewat REST (pola terbukti):**
 
 ```bash
-# Login untuk setiap role (password Orens2026!)
+# Login untuk setiap role (sandi akun uji ada di file seed, lihat bagian 2)
 curl "$VITE_SUPABASE_URL/auth/v1/token?grant_type=password" \
   -H "apikey: $VITE_SUPABASE_ANON_KEY" -H "Content-Type: application/json" \
-  -d '{"email":"gagah5067.pplg1@smkprestasiprima.sch.id","password":"Orens2026!"}'
+  -d '{"email":"ketua@example.com","password":"<password-uji>"}'
 
 # Semua query pakai header: apikey + Authorization: Bearer <access_token>
 # Endpoint yang dipakai UI:
@@ -164,7 +165,7 @@ GET/POST/DELETE /rest/v1/attendance_sessions, assignments, assignment_submission
 - Membuat `auth.users` baru via SQL wajib mengisi kolom token dengan string kosong (GoTrue menolak NULL, detail di bagian 2).
 - Ada satu sesi presensi bekas uji user yang sengaja dibiarkan di DB lokal (sesi `ad`, status closed).
 
-**Direktori acuan:** `prd.md` (kebutuhan), `gemini.md` (build prompt asal), `Pendaftaran Ekstrakulikuler Orens Solution (Jawaban).xlsx` (sumber data roster), migrasi SQL (aturan data paling mengikat).
+**Direktori acuan:** `prd.md` (kebutuhan), `gemini.md` (build prompt asal), migrasi SQL (aturan data paling mengikat). Sumber data roster (file xlsx lokal) sengaja tidak ikut repo.
 
 ## 9. Status Implementasi dan Penyelesaian Item Tertunda
 
@@ -176,11 +177,11 @@ Seluruh item tertunda pada rilis sebelumnya telah diselesaikan:
    - Dapat diakses langsung melalui PostgREST RPC (`POST /rest/v1/rpc/get_dashboard_summary`) oleh pengguna terotentikasi; `anon` sudah dicabut (migrasi 00005 direvisi).
 
 2. **Seed Data Aktivitas Realistis (Selesai):**
-   - Tersedia di migrasi `supabase/migrations/20261018000006_seed_activity_data.sql` dan file mandiri `supabase/seed_activity.sql`.
+   - Tersedia di migrasi `supabase/migrations/20261018000006_seed_activity_data.sql` (file mandiri `supabase/seed_activity.sql` yang dulu adalah duplikatnya sudah dibuang).
    - Memuat data sesi presensi Wajib dan Opsional, rekaman presensi anggota (Hadir, Terlambat, Izin), materi pembelajaran per divisi (tingkat Beginner, Intermediate, Advanced), tugas dengan bobot penilaian dan tenggat waktu, serta pengumpulan tugas dan penilaian mentor/kadiv.
    - Cara menjalankan seed aktivitas:
      ```bash
-     psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/seed_activity.sql
+     psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -f supabase/migrations/20261018000006_seed_activity_data.sql
      ```
 
 3. **Pipeline Deployment Server (Selesai):**

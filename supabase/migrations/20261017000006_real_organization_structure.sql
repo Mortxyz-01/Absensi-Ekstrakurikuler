@@ -1,9 +1,9 @@
--- Migration 20261017000006: Real Organization Members & Structure SMK Prestasi Prima
--- Default password for all accounts: Orens2026!
+-- Migration 20261017000006: Struktur Organisasi Pengurus dan Divisi (akun dummy)
+-- Sandi akun uji didefinisikan di variabel v_pwd_hash di bawah.
 
 DO $$
 DECLARE
-    v_pwd_hash TEXT := crypt('Orens2026!', gen_salt('bf', 10));
+    v_pwd_hash TEXT := crypt('UjiOrensMVP2026!', gen_salt('bf', 10));
     v_role_ketua UUID := '00000000-0000-0000-0000-000000000002';
     v_role_wakil UUID := '00000000-0000-0000-0000-000000000003';
     v_role_sekre UUID := '00000000-0000-0000-0000-000000000004';
@@ -15,74 +15,74 @@ DECLARE
     v_div_gamedev UUID := 'a0000000-0000-0000-0000-000000000003';
     v_div_cybersec UUID := 'a0000000-0000-0000-0000-000000000005';
 BEGIN
-    -- 1. Ketua (Gregorius Wibisono)
+    -- 1. Ketua Umum
     UPDATE auth.users 
-    SET email = 'gregorius5069.pplg1@smkprestasiprima.sch.id',
+    SET email = 'ketua@example.com',
         encrypted_password = v_pwd_hash,
-        raw_user_meta_data = jsonb_build_object('full_name', 'Gregorius Wibisono', 'role', 'Ketua')
+        raw_user_meta_data = jsonb_build_object('full_name', 'Ketua Umum', 'role', 'Ketua')
     WHERE id = '22222222-2222-2222-2222-222222222222';
 
     UPDATE public.users 
-    SET email = 'gregorius5069.pplg1@smkprestasiprima.sch.id',
-        full_name = 'Gregorius Wibisono'
+    SET email = 'ketua@example.com',
+        full_name = 'Ketua Umum'
     WHERE id = '22222222-2222-2222-2222-222222222222';
 
     UPDATE public.members 
-    SET nim = '5069',
-        full_name = 'Gregorius Wibisono'
+    SET nim = '0001',
+        full_name = 'Ketua Umum'
     WHERE id = '22222222-2222-2222-2222-222222222222';
 
-    -- 2. Wakil (Rizqy Dwi Budi Rabbani)
+    -- 2. Wakil Ketua
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'rizqy5086.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Rizqy Dwi Budi Rabbani', 'role', 'Wakil Ketua'), NOW(), NOW())
+    VALUES ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'wakil@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Wakil Ketua', 'role', 'Wakil Ketua'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('33333333-3333-3333-3333-333333333333', 'rizqy5086.pplg1@smkprestasiprima.sch.id', 'Rizqy Dwi Budi Rabbani', v_role_wakil, TRUE)
+    VALUES ('33333333-3333-3333-3333-333333333333', 'wakil@example.com', 'Wakil Ketua', v_role_wakil, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('33333333-3333-3333-3333-333333333333', '5086', 'Rizqy Dwi Budi Rabbani', 'active', '2024-01-15')
+    VALUES ('33333333-3333-3333-3333-333333333333', '0002', 'Wakil Ketua', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
-    -- 3. Sekretaris 1 (Daud Sanggalangi Patuli)
+    -- 3. Sekretaris 1
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('44444444-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'daud5063.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Daud Sanggalangi Patuli', 'role', 'Sekretaris'), NOW(), NOW())
+    VALUES ('44444444-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'sekre1@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Sekretaris 1', 'role', 'Sekretaris'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('44444444-0001-0000-0000-000000000001', 'daud5063.pplg1@smkprestasiprima.sch.id', 'Daud Sanggalangi Patuli', v_role_sekre, TRUE)
+    VALUES ('44444444-0001-0000-0000-000000000001', 'sekre1@example.com', 'Sekretaris 1', v_role_sekre, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('44444444-0001-0000-0000-000000000001', '5063', 'Daud Sanggalangi Patuli', 'active', '2024-01-15')
+    VALUES ('44444444-0001-0000-0000-000000000001', '0003', 'Sekretaris 1', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
-    -- 4. Sekretaris 2 (Zefanya Anastasia Setiawan)
+    -- 4. Sekretaris 2
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('44444444-0002-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'zefanya5092.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Zefanya Anastasia Setiawan', 'role', 'Sekretaris'), NOW(), NOW())
+    VALUES ('44444444-0002-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'sekre2@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Sekretaris 2', 'role', 'Sekretaris'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('44444444-0002-0000-0000-000000000002', 'zefanya5092.pplg1@smkprestasiprima.sch.id', 'Zefanya Anastasia Setiawan', v_role_sekre, TRUE)
+    VALUES ('44444444-0002-0000-0000-000000000002', 'sekre2@example.com', 'Sekretaris 2', v_role_sekre, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('44444444-0002-0000-0000-000000000002', '5092', 'Zefanya Anastasia Setiawan', 'active', '2024-01-15')
+    VALUES ('44444444-0002-0000-0000-000000000002', '0004', 'Sekretaris 2', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     -- CYBERSECURITY
-    -- 5. Kadiv Cybersec (Nathaniel Gilby Ginting)
+    -- 5. Kadiv Cybersecurity
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('55555555-0005-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'nathaniel5082.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Nathaniel Gilby Ginting', 'role', 'Ketua Divisi'), NOW(), NOW())
+    VALUES ('55555555-0005-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'kadiv.cybersec@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Kadiv Cybersecurity', 'role', 'Ketua Divisi'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('55555555-0005-0000-0000-000000000001', 'nathaniel5082.pplg1@smkprestasiprima.sch.id', 'Nathaniel Gilby Ginting', v_role_kadiv, TRUE)
+    VALUES ('55555555-0005-0000-0000-000000000001', 'kadiv.cybersec@example.com', 'Kadiv Cybersecurity', v_role_kadiv, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('55555555-0005-0000-0000-000000000001', '5082', 'Nathaniel Gilby Ginting', 'active', '2024-01-15')
+    VALUES ('55555555-0005-0000-0000-000000000001', '0005', 'Kadiv Cybersecurity', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     UPDATE public.divisions SET lead_id = '55555555-0005-0000-0000-000000000001' WHERE id = v_div_cybersec;
@@ -91,34 +91,34 @@ BEGIN
     VALUES ('55555555-0005-0000-0000-000000000001', v_div_cybersec, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 6. Mentor Cybersec 1 (Bayu Satya Firdaus)
+    -- 6. Mentor Cybersecurity 1
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0005-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'bayu5061.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Bayu Satya Firdaus', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0005-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor1.cybersec@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor Cybersecurity 1', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0005-0000-0000-000000000001', 'bayu5061.pplg1@smkprestasiprima.sch.id', 'Bayu Satya Firdaus', v_role_mentor, TRUE)
+    VALUES ('66666666-0005-0000-0000-000000000001', 'mentor1.cybersec@example.com', 'Mentor Cybersecurity 1', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0005-0000-0000-000000000001', '5061', 'Bayu Satya Firdaus', 'active', '2024-01-15')
+    VALUES ('66666666-0005-0000-0000-000000000001', '0006', 'Mentor Cybersecurity 1', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
     VALUES ('66666666-0005-0000-0000-000000000001', v_div_cybersec, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 7. Mentor Cybersec 2 (Fahry Eka Budi Rabbani)
+    -- 7. Mentor Cybersecurity 2
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0005-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'fahry5104.pplg2@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Fahry Eka Budi Rabbani', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0005-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor2.cybersec@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor Cybersecurity 2', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0005-0000-0000-000000000002', 'fahry5104.pplg2@smkprestasiprima.sch.id', 'Fahry Eka Budi Rabbani', v_role_mentor, TRUE)
+    VALUES ('66666666-0005-0000-0000-000000000002', 'mentor2.cybersec@example.com', 'Mentor Cybersecurity 2', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0005-0000-0000-000000000002', '5104', 'Fahry Eka Budi Rabbani', 'active', '2024-01-15')
+    VALUES ('66666666-0005-0000-0000-000000000002', '0007', 'Mentor Cybersecurity 2', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
@@ -126,17 +126,17 @@ BEGIN
     ON CONFLICT DO NOTHING;
 
     -- GAME DEVELOPMENT
-    -- 8. Kadiv Game Dev (Gagah Satria Handoko)
+    -- 8. Kadiv Game Development
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('55555555-0003-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'gagah5067.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Gagah Satria Handoko', 'role', 'Ketua Divisi'), NOW(), NOW())
+    VALUES ('55555555-0003-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'kadiv.gamedev@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Kadiv Game Development', 'role', 'Ketua Divisi'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('55555555-0003-0000-0000-000000000001', 'gagah5067.pplg1@smkprestasiprima.sch.id', 'Gagah Satria Handoko', v_role_kadiv, TRUE)
+    VALUES ('55555555-0003-0000-0000-000000000001', 'kadiv.gamedev@example.com', 'Kadiv Game Development', v_role_kadiv, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('55555555-0003-0000-0000-000000000001', '5067', 'Gagah Satria Handoko', 'active', '2024-01-15')
+    VALUES ('55555555-0003-0000-0000-000000000001', '0008', 'Kadiv Game Development', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     UPDATE public.divisions SET lead_id = '55555555-0003-0000-0000-000000000001' WHERE id = v_div_gamedev;
@@ -145,34 +145,34 @@ BEGIN
     VALUES ('55555555-0003-0000-0000-000000000001', v_div_gamedev, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 9. Mentor Game Dev 1 (Muhammad Sulaiman)
+    -- 9. Mentor Game Development 1
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0003-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm.sulaiman5080.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Muhammad Sulaiman', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0003-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor1.gamedev@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor Game Development 1', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0003-0000-0000-000000000001', 'm.sulaiman5080.pplg1@smkprestasiprima.sch.id', 'Muhammad Sulaiman', v_role_mentor, TRUE)
+    VALUES ('66666666-0003-0000-0000-000000000001', 'mentor1.gamedev@example.com', 'Mentor Game Development 1', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0003-0000-0000-000000000001', '5080', 'Muhammad Sulaiman', 'active', '2024-01-15')
+    VALUES ('66666666-0003-0000-0000-000000000001', '0009', 'Mentor Game Development 1', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
     VALUES ('66666666-0003-0000-0000-000000000001', v_div_gamedev, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 10. Mentor Game Dev 2 (Ghifari Prawira Ekapaksi)
+    -- 10. Mentor Game Development 2
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0003-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ghifari5068.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Ghifari Prawira Ekapaksi', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0003-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor2.gamedev@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor Game Development 2', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0003-0000-0000-000000000002', 'ghifari5068.pplg1@smkprestasiprima.sch.id', 'Ghifari Prawira Ekapaksi', v_role_mentor, TRUE)
+    VALUES ('66666666-0003-0000-0000-000000000002', 'mentor2.gamedev@example.com', 'Mentor Game Development 2', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0003-0000-0000-000000000002', '5068', 'Ghifari Prawira Ekapaksi', 'active', '2024-01-15')
+    VALUES ('66666666-0003-0000-0000-000000000002', '0010', 'Mentor Game Development 2', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
@@ -180,17 +180,17 @@ BEGIN
     ON CONFLICT DO NOTHING;
 
     -- WEB DEVELOPMENT
-    -- 11. Kadiv Web Dev (Muhammad Sasongko Junior)
+    -- 11. Kadiv Web Development
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('55555555-0002-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm.sasongko5112.pplg2@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Muhammad Sasongko Junior', 'role', 'Ketua Divisi'), NOW(), NOW())
+    VALUES ('55555555-0002-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'kadiv.webdev@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Kadiv Web Development', 'role', 'Ketua Divisi'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('55555555-0002-0000-0000-000000000001', 'm.sasongko5112.pplg2@smkprestasiprima.sch.id', 'Muhammad Sasongko Junior', v_role_kadiv, TRUE)
+    VALUES ('55555555-0002-0000-0000-000000000001', 'kadiv.webdev@example.com', 'Kadiv Web Development', v_role_kadiv, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('55555555-0002-0000-0000-000000000001', '5112', 'Muhammad Sasongko Junior', 'active', '2024-01-15')
+    VALUES ('55555555-0002-0000-0000-000000000001', '0011', 'Kadiv Web Development', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     UPDATE public.divisions SET lead_id = '55555555-0002-0000-0000-000000000001' WHERE id = v_div_webdev;
@@ -199,17 +199,17 @@ BEGIN
     VALUES ('55555555-0002-0000-0000-000000000001', v_div_webdev, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 12. Mentor Web Dev 1 (Toberryazdin Hartono)
+    -- 12. Mentor Web Development 1
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0002-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'toberyazdin5128.pplg2@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Toberryazdin Hartono', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0002-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor1.webdev@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor Web Development 1', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0002-0000-0000-000000000001', 'toberyazdin5128.pplg2@smkprestasiprima.sch.id', 'Toberryazdin Hartono', v_role_mentor, TRUE)
+    VALUES ('66666666-0002-0000-0000-000000000001', 'mentor1.webdev@example.com', 'Mentor Web Development 1', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0002-0000-0000-000000000001', '5128', 'Toberryazdin Hartono', 'active', '2024-01-15')
+    VALUES ('66666666-0002-0000-0000-000000000001', '0012', 'Mentor Web Development 1', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
@@ -217,17 +217,17 @@ BEGIN
     ON CONFLICT DO NOTHING;
 
     -- UI/UX
-    -- 13. Kadiv UI/UX (Kayla Audrey Illonie)
+    -- 13. Kadiv UI/UX
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('55555555-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'kayla5110.pplg2@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Kayla Audrey Illonie', 'role', 'Ketua Divisi'), NOW(), NOW())
+    VALUES ('55555555-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'kadiv.uiux@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Kadiv UI/UX', 'role', 'Ketua Divisi'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('55555555-0001-0000-0000-000000000001', 'kayla5110.pplg2@smkprestasiprima.sch.id', 'Kayla Audrey Illonie', v_role_kadiv, TRUE)
+    VALUES ('55555555-0001-0000-0000-000000000001', 'kadiv.uiux@example.com', 'Kadiv UI/UX', v_role_kadiv, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('55555555-0001-0000-0000-000000000001', '5110', 'Kayla Audrey Illonie', 'active', '2024-01-15')
+    VALUES ('55555555-0001-0000-0000-000000000001', '0013', 'Kadiv UI/UX', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     UPDATE public.divisions SET lead_id = '55555555-0001-0000-0000-000000000001' WHERE id = v_div_uiux;
@@ -236,34 +236,34 @@ BEGIN
     VALUES ('55555555-0001-0000-0000-000000000001', v_div_uiux, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 14. Mentor UI/UX 1 (Lovely Angel)
+    -- 14. Mentor UI/UX 1
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'lovely5071.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Lovely Angel', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0001-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor1.uiux@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor UI/UX 1', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0001-0000-0000-000000000001', 'lovely5071.pplg1@smkprestasiprima.sch.id', 'Lovely Angel', v_role_mentor, TRUE)
+    VALUES ('66666666-0001-0000-0000-000000000001', 'mentor1.uiux@example.com', 'Mentor UI/UX 1', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0001-0000-0000-000000000001', '5071', 'Lovely Angel', 'active', '2024-01-15')
+    VALUES ('66666666-0001-0000-0000-000000000001', '0014', 'Mentor UI/UX 1', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)
     VALUES ('66666666-0001-0000-0000-000000000001', v_div_uiux, 'Wajib', TRUE)
     ON CONFLICT DO NOTHING;
 
-    -- 15. Mentor UI/UX 2 (Yohanes Adriano Putra)
+    -- 15. Mentor UI/UX 2
     INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-    VALUES ('66666666-0001-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'yohanes5091.pplg1@smkprestasiprima.sch.id', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Yohanes Adriano Putra', 'role', 'Mentor'), NOW(), NOW())
+    VALUES ('66666666-0001-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mentor2.uiux@example.com', v_pwd_hash, NOW(), '{"provider":"email","providers":["email"]}'::jsonb, jsonb_build_object('full_name', 'Mentor UI/UX 2', 'role', 'Mentor'), NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, encrypted_password = EXCLUDED.encrypted_password, raw_user_meta_data = EXCLUDED.raw_user_meta_data;
 
     INSERT INTO public.users (id, email, full_name, role_id, is_active)
-    VALUES ('66666666-0001-0000-0000-000000000002', 'yohanes5091.pplg1@smkprestasiprima.sch.id', 'Yohanes Adriano Putra', v_role_mentor, TRUE)
+    VALUES ('66666666-0001-0000-0000-000000000002', 'mentor2.uiux@example.com', 'Mentor UI/UX 2', v_role_mentor, TRUE)
     ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, role_id = EXCLUDED.role_id;
 
     INSERT INTO public.members (id, nim, full_name, status, join_date)
-    VALUES ('66666666-0001-0000-0000-000000000002', '5091', 'Yohanes Adriano Putra', 'active', '2024-01-15')
+    VALUES ('66666666-0001-0000-0000-000000000002', '0015', 'Mentor UI/UX 2', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET nim = EXCLUDED.nim, full_name = EXCLUDED.full_name;
 
     INSERT INTO public.member_divisions (member_id, division_id, classification, is_active)

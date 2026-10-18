@@ -175,7 +175,7 @@ DECLARE
     v_div_uiux UUID := 'a0000000-0000-0000-0000-000000000001';
     v_div_webdev UUID := 'a0000000-0000-0000-0000-000000000002';
 BEGIN
-    v_encrypted_pw := crypt('Orens2026!', gen_salt('bf'));
+    v_encrypted_pw := crypt('UjiOrensMVP2026!', gen_salt('bf'));
 
     SELECT id INTO v_role_pembina FROM roles WHERE name = 'Pembina';
     SELECT id INTO v_role_ketua FROM roles WHERE name = 'Ketua';
@@ -192,16 +192,16 @@ BEGIN
     ) VALUES (
         '11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 'pembina@orens.org', v_encrypted_pw, NOW(),
-        '{"provider":"email","providers":["email"]}', '{"full_name":"Budi Santoso, M.Kom.","role":"Pembina"}',
+        '{"provider":"email","providers":["email"]}', '{"full_name":"Pembina Orens","role":"Pembina"}',
         NOW(), NOW()
     ) ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO users (id, email, full_name, role_id, is_active)
-    VALUES ('11111111-1111-1111-1111-111111111111', 'pembina@orens.org', 'Budi Santoso, M.Kom.', v_role_pembina, TRUE)
+    VALUES ('11111111-1111-1111-1111-111111111111', 'pembina@orens.org', 'Pembina Orens', v_role_pembina, TRUE)
     ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, full_name = EXCLUDED.full_name;
 
     INSERT INTO members (id, nim, full_name, phone, status, join_date)
-    VALUES ('11111111-1111-1111-1111-111111111111', 'DOSEN-001', 'Budi Santoso, M.Kom.', '081234567890', 'active', '2020-01-01')
+    VALUES ('11111111-1111-1111-1111-111111111111', 'DOSEN-001', 'Pembina Orens', '081234567890', 'active', '2020-01-01')
     ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, status = EXCLUDED.status;
 
     -- 2. Ketua
@@ -211,16 +211,16 @@ BEGIN
     ) VALUES (
         '22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', 'ketua@orens.org', v_encrypted_pw, NOW(),
-        '{"provider":"email","providers":["email"]}', '{"full_name":"Gregorius Wibisono","role":"Ketua"}',
+        '{"provider":"email","providers":["email"]}', '{"full_name":"Ketua Umum","role":"Ketua"}',
         NOW(), NOW()
     ) ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO users (id, email, full_name, role_id, is_active)
-    VALUES ('22222222-2222-2222-2222-222222222222', 'ketua@orens.org', 'Gregorius Wibisono', v_role_ketua, TRUE)
+    VALUES ('22222222-2222-2222-2222-222222222222', 'ketua@orens.org', 'Ketua Umum', v_role_ketua, TRUE)
     ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, full_name = EXCLUDED.full_name;
 
     INSERT INTO members (id, nim, full_name, phone, status, join_date)
-    VALUES ('22222222-2222-2222-2222-222222222222', '2024001001', 'Gregorius Wibisono', '081234567891', 'active', '2024-01-15')
+    VALUES ('22222222-2222-2222-2222-222222222222', '2024001001', 'Ketua Umum', '081234567891', 'active', '2024-01-15')
     ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, status = EXCLUDED.status;
 
     -- 3. Wakil Ketua
