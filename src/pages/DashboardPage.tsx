@@ -166,7 +166,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         const myClosedSessions = allSessions.filter(
           (s) => s.status === 'closed' && (!s.division_id || myDivIds.has(s.division_id))
         );
-        setMyTotalEligibleSessions(myClosedSessions.length || 3);
+        setMyTotalEligibleSessions(myClosedSessions.length);
 
         const { data: myRecs } = await supabase
           .from('attendance_records')
@@ -292,7 +292,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               <FileCheck2 className="w-4 h-4 text-blue-600" />
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-gray-100 mt-2">
-              {myAverageGrade !== null ? myAverageGrade : 88.5}
+              {myAverageGrade !== null ? myAverageGrade : 'Belum Dinilai'}
             </div>
             <p className="text-[11px] text-gray-700 dark:text-gray-200 mt-1">
               Evaluasi proyek dan modul divisi

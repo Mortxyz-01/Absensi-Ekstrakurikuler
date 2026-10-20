@@ -52,7 +52,7 @@ export interface AttendanceSession {
   id: string;
   title: string;
   division_id: string | null;
-  activity_type: ActivityType;
+  session_type: ActivityType;
   date: string;
   start_time: string;
   end_time: string;
