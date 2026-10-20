@@ -343,7 +343,7 @@ export const MembersPage: React.FC = () => {
         .from('attendance_records')
         .select(`
           id, status, scan_time, verification_method, notes,
-          session:attendance_sessions (title, date, activity_type)
+          session:attendance_sessions (title, date, session_type)
         `)
         .eq('member_id', m.id)
         .order('scan_time', { ascending: false });

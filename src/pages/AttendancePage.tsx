@@ -1119,7 +1119,7 @@ export const AttendancePage: React.FC = () => {
                     {activeSession.title}
                   </h3>
                   <p className="text-xs text-gray-700 dark:text-gray-200">
-                    Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kategori: {activeSession.activity_type} • Batas Telat: {activeSession.late_threshold_minutes} menit
+                    Divisi: {activeSession.division?.name || 'Semua Divisi'} • Kategori: {activeSession.session_type} • Batas Telat: {activeSession.late_threshold_minutes} menit
                   </p>
                 </div>
 
@@ -1286,12 +1286,12 @@ export const AttendancePage: React.FC = () => {
                         <div>{sess.division?.name || 'Semua Divisi'}</div>
                         <span
                           className={`inline-block text-[10px] font-bold px-1.5 py-0.2 rounded mt-0.5 ${
-                            sess.activity_type === 'Wajib'
+                            sess.session_type === 'Wajib'
                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                               : 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
                           }`}
                         >
-                          {sess.activity_type}
+                          {sess.session_type}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-xs text-gray-700 dark:text-gray-200">
@@ -1399,12 +1399,12 @@ export const AttendancePage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                        sess.activity_type === 'Wajib'
+                        sess.session_type === 'Wajib'
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
                           : 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
                       }`}
                     >
-                      {sess.activity_type}
+                      {sess.session_type}
                     </span>
                     <span className="text-[10px] font-mono font-bold text-orens-600 dark:text-orens-400 bg-gray-50 dark:bg-dark-900/60 border border-gray-200 dark:border-dark-700 px-2 py-0.5 rounded">
                       Kode: {sess.backup_code}
@@ -1663,7 +1663,7 @@ export const AttendancePage: React.FC = () => {
                 {activeSession.title}
               </h2>
               <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                {activeSession.division?.name || 'Semua Divisi'} &middot; {activeSession.activity_type}
+                {activeSession.division?.name || 'Semua Divisi'} &middot; {activeSession.session_type}
                 {activeSession.late_threshold_minutes
                   ? ` &middot; telat lebih dari ${activeSession.late_threshold_minutes} menit dicatat Terlambat`
                   : ''}
@@ -1796,7 +1796,7 @@ export const AttendancePage: React.FC = () => {
                 </span>
               </div>
               <div className="text-[11px] text-gray-700 dark:text-gray-200">
-                Divisi: <strong>{targetSessionForManual.division?.name || 'Semua Divisi'}</strong> • Kategori: <strong>{targetSessionForManual.activity_type}</strong>
+                Divisi: <strong>{targetSessionForManual.division?.name || 'Semua Divisi'}</strong> • Kategori: <strong>{targetSessionForManual.session_type}</strong>
               </div>
             </div>
 
